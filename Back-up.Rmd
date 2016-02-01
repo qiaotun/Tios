@@ -1,0 +1,67 @@
+---
+title: "Back-up"
+author: "Haosheng Luo"
+date: "January 31, 2016"
+output: pdf_document
+---
+
+
+#Question 2
+##Part 1
+This is a linear programming question. We are required to optimize the profit function, subject to 200 constraints that the total amount of each material used should be smaller than its limit, and 150 constraints that the unit of each product should be bigger than 0. 
+Let's denote the unit vector as $A = [a_1, a_2, \cdots, a_{150}]$, resource limit vector as $B = [b_1, b_2, \cdots, b_{200}]$, 
+Follwing we can find the maximal profit and the associated unit of production:
+```{r,message=FALSE,warning=FALSE}
+check_packages(c("gdata","utils","lpSolve"))
+
+path = '/Users/luohaosheng/Desktop/Question/Tios/Test/company-production.xlsx'
+Usage = read.xls(path,sheet=1)
+Usage[,1]=NULL
+Usage = t(as.matrix(Usage))
+Limit = read.xls(path,sheet=2)
+Limit[,1]=NULL
+Limit = t(as.matrix(Limit))
+Return = read.xls(path,sheet=3)
+Return[,1]=NULL
+Return = t(as.matrix(Return))
+
+n_col = ncol(Usage)
+n_row = nrow(Usage)
+
+f.obj = Return
+f.con = rbind(Usage,diag(n_col))
+f.dir = c(rep("<=",n_row),rep(">=",n_col))
+f.rhs = c(Limit,rep(0,n_col))
+
+(Sol = lp ("max", f.obj, f.con, f.dir, f.rhs))
+(paste("The optimal choice of production are:",Amount = t(as.matrix(Sol$solution))))
+```
+##Part 2
+Let's raise the resource limit all the way to infinite and use the above linear programming model to calculate the optimal production again. Following we report the product index that we do not produce under the Material Usage conditions.
+1. Assume we have 10^8 units in each of all materials:
+```{r,message=FALSE,warning=FALSE}
+f.obj = Return
+f.con = rbind(Usage,diag(n_col))
+f.dir = c(rep("<=",n_row),rep(">=",n_col))
+f.rhs = c(rep(10^6,n_row),rep(0,n_col))
+
+Sol = lp ("max", f.obj, f.con, f.dir, f.rhs)
+Amount = as.matrix(Sol$solution)
+which(Amount==0)
+```
+2. Assume we have 10^15 units in each of all materials:
+```{r,message=FALSE,warning=FALSE}
+f.obj = Return
+f.con = rbind(Usage,diag(n_col))
+f.dir = c(rep("<=",n_row),rep(">=",n_col))
+f.rhs = c(rep(10^15,n_row),rep(0,n_col))
+
+Sol = lp ("max", f.obj, f.con, f.dir, f.rhs)
+Amount = as.matrix(Sol$solution)
+which(Amount==0)
+```
+
+We can discover that when we have unlimited amount of resource, the optimal choice of production of over 100 products is 0, which means that we do not need 150 boxes at anytime. In other words, the boxing requirement is trivial in this question. 
+
+
+

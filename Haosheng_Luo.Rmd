@@ -1,0 +1,108 @@
+---
+title: "Tios Capital Homework"
+author: "Haosheng Luo"
+date: "January 29, 2016"
+output: pdf_document
+---
+#Check Package
+Before carrying out any analysis, let's define a R function that automatically loads the packages we need.
+```{r,message=FALSE,warning=FALSE}
+check_packages = function(names)
+{
+  for(name in names)
+  {
+    if (!(name %in% installed.packages()))
+      install.packages(name, repos="http://cran.us.r-project.org")
+    
+    library(name, character.only=TRUE)
+  }
+}
+```
+#Question 1
+## Introduction
+In this question, we model the 30-minute transaction data for the electricity settlement price and total demand in Victoria, Australia in 2014. We select the model based on three error measures and based on which, we provide a short-term forecast of settlement prices from Jan 1, 2015 00:30:00 am to Jan 3, 2015 00:00:00 am. 
+
+##Data Loading and Validation
+The dataset is supposed to contain $365\times 24\times 2 = 17520$ rows of datapoints. Before any exploration into the data, we need to construct the intermediate variables and check the data quality, to make sure no duplicated or missing datapoints, and that the data are collected in 2014 (except one at 0:00:00 am on Jan 1, 2015). Intermediate variables include:
+
+1. $\textbf{YEAR}$: the year of a datapoint.
+2. $\textbf{MONTH}$: the month of a datapoint.
+3. $\textbf{DAY}$: the day of a datapoint.
+4. $\textbf{TIME}$: the clock time of a datapoint.
+5. $\textbf{WDAY}$: the days of a week of a datapoint
+5. $\textbf{WDAY2}$: 1 if it is a weekday datapoint, and 0 if it is a weekend datapoint.
+
+Following are the results of dataset validation.
+```{r,message=FALSE,warning=FALSE}
+check_packages(c("stats","devtools","utils","lubridate","dplyr","tseries","neuralnet"))
+
+data = read.csv('/Users/luohaosheng/Desktop/Question/Tios/Test/australia-victoria-energy.csv')
+data = dplyr::select(data,SETTLEMENTDATE,TOTALDEMAND,RRP)%>%
+  mutate(YEAR=year(SETTLEMENTDATE),MONTH=month(SETTLEMENTDATE),DAY=day(SETTLEMENTDATE),
+         TIME = paste(hour(SETTLEMENTDATE),minute(SETTLEMENTDATE)),
+         WDAY=wday(SETTLEMENTDATE,label=T),WDAY2=1)
+
+data[data$WDAY%in%c("Sat","Sun"),"WDAY2"]=0
+year = transmute(data, YEAR=year(SETTLEMENTDATE))
+n = nrow(data)
+(paste("Number of all the datapoints:", n))
+(paste("Number of the datapoint in 2015:", nrow(data[year$YEAR!=2014,])))
+(paste("Number of duplicated data:", nrow(data[duplicated(data$SETTLEMENTDATE),])))
+(paste("Number of datapints that contain missing values:", nrow(data[!complete.cases(data),])))
+```
+As a result, we can conclude that the dataset is intact. 
+
+#A Quick Glance at the Settlement Price and Total Demand
+To recognize the basic nature of the price and demand time-series, we need to take a quick scan over the time-series. The result will help us to build assumptions and the associated models.
+
+##Settlement Price and Total Demand Over 2014
+```{r, message=FALSE, warning=FALSE}
+#plot(data$RRP,type="l",xlab="Index", ylab="RRP", main="The Time-series of RRP")
+#plot(data$TOTALDEMAND,type="l",xlab="Index",ylab="Total Demand",main="The Time-series of Total Demand")
+```
+Given the nature of electricity generation, transmission, storage and auction design, the settlement price series exhibit much more complexity than the demand series [1]. In the degegulated market, the settlement price can be highly-volatile, and much more likely to become negative or exceptionally high than other commodities [2]. In the above plots we can discover a major price and demand series fluctuation from Jan 14th to 17th, due to the 4 consecutive days of "heatwave not seen for 100 years" [3], and several minor fluctuations in days such as Feb 02, due to the similar hot weather [4]. 
+
+Also, 
+
+##Seasonality
+```{r,message=FALSE,warning=FALSE}
+datetime = seq(from=as.POSIXct("2014-4-1 0:00"), to=as.POSIXct("2014-4-30 23:30"),
+                by="30 mins")  
+plot(datetime,data[data$MONTH==4,"RRP"], type="l", xaxs='i', xlab="Date", 
+     ylab="RRP", main="The Time-series of RRP in April")
+
+plot(datetime,data[data$MONTH==4,"TOTALDEMAND"], type="l", xaxs='i', xlab="Date", 
+     ylab="Total Demand", main="The Time-series of Total Demand in April",
+     xlim = as.POSIXct(c("2014-4-1 0:00","2014-4-30 23:30")))
+
+datetime = seq(from=as.POSIXct("2014-4-5 0:00"), to=as.POSIXct("2014-4-13 23:30"),
+               by="30 mins")  
+plot(datetime, data[(data$MONTH==4)&(data$DAY>4)&(data$DAY<14),"RRP"], type="l",  
+     xaxs='i', xlab="Date",ylab="RRP", main="The Time-series of RRP during April 5th - 13th")
+plot(datetime, data[(data$MONTH==4)&(data$DAY>4)&(data$DAY<14),"TOTALDEMAND"], 
+     type="l", xaxs='i', xlab="Date",ylab="Total Demand", 
+     main="The Time-series of Total Demand during April 5th - 13th")
+
+```
+
+Selecting data in April, where the price series exhibits mild fluctuation, we observe strong weekly seasonality and daily seasonality in the total demand series, while they are weaker in the price series. Due to the large number of the clock times, we merely incorporate the weekly effect in the model by adding a dummy variable indicating weekday, and assume that the daily seasonality in the price series can be sufficiently captured by the daily seasonality in the demand series. Also, the effect of holiday effect is also modeled as a potential variables, as suggested in [1]. The public holiday (including both national and regional) database is generated according to [5].
+
+```{r,message=FALSE,warning=FALSE}
+# generate public holiday database
+Holiday = as.data.frame(matrix(c(1,1,1,27,3,10,4,18,4,21,4,25,6,9,11,4,12,25,12,26), 
+                 nrow = 10, ncol = 2, byrow=T))
+colnames(Holiday) = c("MONTH","DAY")
+Holiday$holiday = 1
+```
+
+
+
+
+
+
+
+
+```{r,message=FALSE,warning=FALSE}
+#plot(data$RRP, data$TOTALDEMAND, type = "p", pch=20, xlab="RRP",ylab="Total Demand",main="The Correlation Between RRP and Total Demand")
+```
+
