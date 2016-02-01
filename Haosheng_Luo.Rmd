@@ -5,7 +5,7 @@ date: "January 29, 2016"
 output: pdf_document
 ---
 #Check Package
-Before carrying out any analysis, let's define a R function that automatically loads the packages we need.
+Before carrying out any analysis, let's define a R function that automatically loads the packages I need.
 ```{r,message=FALSE,warning=FALSE}
 check_packages = function(names)
 {
@@ -20,10 +20,10 @@ check_packages = function(names)
 ```
 #Question 1
 ## Introduction
-In this question, we model the 30-minute transaction data for the electricity settlement price and total demand in Victoria, Australia in 2014. The modeling process can be separated into two parts: modeling the association between settlement price and total demand, and forecasting total demand. Linear models and neural networks are applied. In the both procedures, we select the model based on Mean Squared Error (MSE), Mean Absolute Percentage Error (MAPE) and the cross-validation techniques. The error analysis also involves comparison with a naive model, which uses the current value as a forecast of the next value. Finally we provide a short-term forecast of settlement prices from Jan 1, 2015 00:30:00 am to Jan 3, 2015 00:00:00 am, based on the model selected. 
+In this question, I model the 30-minute transaction data for the electricity settlement price and total demand in Victoria, Australia in 2014. The modeling process can be separated into two parts: modeling the association between settlement price and total demand, and forecasting total demand. Linear models and neural networks are applied. In the both procedures, I select the proposed model based on Mean Squared Error (MSE), Mean Absolute Percentage Error (MAPE) and the cross-validation technique. The error analysis also involves comparison with a naive model, which uses the current value as a forecast of the next value. Finally I provide a short-term forecast of settlement prices from Jan 1, 2015 00:30:00 am to Jan 3, 2015 00:00:00 am, based on the model selected. 
 
 ##Data Loading and Validation
-The dataset is supposed to contain $365\times 24\times 2 = 17520$ rows of datapoints. Before any exploration into the data, we need to construct the intermediate variables and check the data quality, to make sure no duplicated or missing datapoints, and that the data are collected in 2014 (except one at 0:00:00 am on Jan 1, 2015). Intermediate variables include:
+The dataset is supposed to contain $365\times 24\times 2 = 17520$ rows of datapoints. Before any exploration into the data, I need to construct the intermediate variables and check data quality, to make sure no duplicated or missing datapoints, and that the data are collected in 2014 (except one at 0:00:00 am on Jan 1, 2015). Intermediate variables include:
 
 1. $\textbf{YEAR}$: the year of a datapoint.
 2. $\textbf{MONTH}$: the month of a datapoint.
@@ -31,7 +31,7 @@ The dataset is supposed to contain $365\times 24\times 2 = 17520$ rows of datapo
 4. $\textbf{TIME}$: the clock time of a datapoint.
 5. $\textbf{HOUR}$: the hour of a datapoint.
 6. $\textbf{MINUTE}$: the minute of a datapoint.
-7. $\textbf{WDAY}$: the days of a week of a datapoint.
+7. $\textbf{WDAY}$: the day of a week of a datapoint.
 8. $\textbf{WDAY2}$: 0.1 if it is a weekday datapoint, and 0 if it is a weekend datapoint. 0.1 is chosen due to the computation speed in the neural network models.
 
 Following are the results of dataset validation.
@@ -52,21 +52,23 @@ n = nrow(data)
 (paste("Number of duplicated data:", nrow(data[duplicated(data$SETTLEMENTDATE),])))
 (paste("Number of datapints that contain missing values:", nrow(data[!complete.cases(data),])))
 ```
-As a result, we can conclude that the dataset is intact. 
+As a result, I can conclude that the dataset is intact. 
 
 #A Quick Glance at the Settlement Price and Total Demand
-To recognize the basic nature of the price and demand time-series, we need to take a quick scan over the time-series. The result will help us to build assumptions and the associated models.
+To recognize the basic pattern of price and demand time-series, I need to take a quick scan over the data. The result will help us to build assumptions and the associated models.
 
 ##Settlement Price and Total Demand Over 2014
 ```{r, message=FALSE, warning=FALSE}
 #plot(data$RRP,type="l",xlab="Index", ylab="RRP", main="The Time-series of RRP")
 #plot(data$TOTALDEMAND,type="l",xlab="Index",ylab="Total Demand",main="The Time-series of Total Demand")
 ```
-Given the nature of electricity generation, transmission, storage and auction design, the settlement price series exhibit much more complexity than the demand series [1]. In the degegulated market, the settlement price can be highly-volatile, and much more likely to become negative or exceptionally high than other commodities [2]. In the above plots we can discover a major price and demand series fluctuation from Jan 14th to 17th, due to the 4 consecutive days of "heatwave not seen for 100 years" [3], and several minor fluctuations in days such as Feb 02, due to the similar hot weather [4]. 
+Given the nature of electricity generation, transmission, storage and auction design, the settlement price series exhibit much more complexity than the demand series [1]. In the degegulated market, the settlement price can be highly-volatile, and much more likely to become negative or exceptionally high than other commodities [2]. In the above plots I can discover a major price and demand series fluctuation from Jan 14th to 17th, due to the 4 consecutive days of "heatwave not seen for 100 years" [3], and several minor fluctuations in days such as Feb 02, due to the similar hot weather [4]. 
 
 Also, 
 
 ##Seasonality
+
+Selecting data in April, where the price series exhibits mild fluctuation, I observe strong weekly seasonality and daily seasonality in the total demand series, while they are weaker in the price series. Due to the large number of the clock times, I merely incorporate the weekly effect in the model by adding a dummy variable indicating weekday, and assume that the daily seasonality in the price series can be sufficiently captured by the daily seasonality in the demand series. Also, the effect of holiday effect is also modeled as a potential variables, as suggested in [1]. The public holiday (including both national and regional) database is generated according to [5].
 ```{r,message=FALSE,warning=FALSE}
 datetime = seq(from=as.POSIXct("2014-4-1 0:00"), to=as.POSIXct("2014-4-30 23:30"),
                 by="30 mins")  
@@ -87,7 +89,7 @@ plot(datetime, data[(data$MONTH==4)&(data$DAY>4)&(data$DAY<14),"TOTALDEMAND"],
 
 ```
 
-Selecting data in April, where the price series exhibits mild fluctuation, we observe strong weekly seasonality and daily seasonality in the total demand series, while they are weaker in the price series. Due to the large number of the clock times, we merely incorporate the weekly effect in the model by adding a dummy variable indicating weekday, and assume that the daily seasonality in the price series can be sufficiently captured by the daily seasonality in the demand series. Also, the effect of holiday effect is also modeled as a potential variables, as suggested in [1]. The public holiday (including both national and regional) database is generated according to [5].
+
 
 ```{r,message=FALSE,warning=FALSE}
 # generate public holiday database
@@ -98,7 +100,7 @@ Holiday$holiday = 0.1
 ```
 
 ##Data Smoothing and Truncating
-To address the problem of high volatility in the price series, we choose to smooth the data of the major volatility event during Tuesday, Jan. 14th to Friday, Jan. 17th, by replacing the total demand and price series with the average of demand and price at each half hour on weekdays. However, we choose to truncate the price spikes in the other minor events at 80 dollars, and try to model the occasional yet relatively milder price volativity through incorporating higher orders of total demand. Also, to stablize the data and improve the computation efficiency, our analysis is on the logarithmic scale. As a result, we replace negative price with 0.01, whose log value can still be sufficiently small. 
+To address the problem of high volatility in the price series, I smooth the data of the major volatility event during Tuesday, Jan. 14th to Friday, Jan. 17th, by replacing the total demand and price series with the average of demand and price at each half hour on weekdays. However, I choose to truncate the price spikes in the other minor events at 80 dollars, and try to model the occasional yet relatively milder price volativity through incorporating higher orders of total demand. Also, to stablize the data and improve the computation efficiency, our analysis is on the logarithmic scale. As a result, I replace negative price with 0.01, whose log value can still be sufficiently small. 
 ```{r,message=FALSE,warning=FALSE}
 data2 = data
 hot_index = rownames(data[data$MONTH==1&data$DAY%in%14:17,])
@@ -110,7 +112,7 @@ data2[hot_index,c("TOTALDEMAND","RRP")]=normal_wday[c("TOTALDEMAND","RRP")]
 data2[data2$RRP<0,"RRP"]=0.01
 data2[data2$RRP>80,"RRP"]=80
 ```
-Following we can find a strong positive correlation between the total demand for electricity and settlement price.
+Following I can find a strong positive correlation between the total demand for electricity and settlement price.
 ```{r,message=FALSE,warning=FALSE}
 plot(data2$RRP, data2$TOTALDEMAND, type = "p", pch=20, xlab="RRP ($/MWh)",
      ylab="Total Demand (MW)",main="The Correlation Between RRP and Total 
@@ -118,16 +120,16 @@ plot(data2$RRP, data2$TOTALDEMAND, type = "p", pch=20, xlab="RRP ($/MWh)",
 ```
 
 ##Model Setting
-Inspired by the five-mintue electricity forecasting method adopted by the Australian Energy Market Operator (AEMO) [6], we will utilize both the linear and neural network model, and data on the logarithmatic scale to forecast the demand and price. Also, similar to [6], we include "4 log changes immediately prior to the period being predicted and 5 leading up to and including the period occuring exactly one week before the time of the desired prediction" [6], in the demand forecasting model. In our 30-min case, the corresponding lag orders are 1 to 4, and $7\times 24\times 2 = 336$ to $7\times 24\times 2 +5 = 340$. 
+Inspired by the five-mintue electricity forecasting method adopted by the Australian Energy Market Operator (AEMO) [6], I will utilize both the linear and neural network model, and data on the logarithmatic scale to forecast the demand and price. Also, similar to [6], I include "4 log changes immediately prior to the period being predicted and 5 leading up to and including the period occuring exactly one week before the time of the desired prediction" [6], in the demand forecasting model. In our 30-min case, the corresponding lag orders are 1 to 4, and $7\times 24\times 2 = 336$ to $7\times 24\times 2 +5 = 340$. 
 
-Therefore, we create new variables as follows:
+Therefore, I create new variables as follows:
 
 1. $\textbf{LCRRP}$: the log change of the settlement price by 30 minutes.
 2. $\textbf{LCTOTD}$: the log change of the total demand by 30 minutes.
 3. $\textbf{LCTOTD2}$ and $\textbf{LCTOTD3}$: the square and cubic of $\textbf{LCTOTD}$.
 4. $\textbf{L1LCTOTD}$ to $\textbf{L340LCTOTD}$: the nine lags of the log change of the settlement price by 30 minutes discussed above.
 
-The weekend and holiday effects are considered by incorporating an indicator respectively. Instead of 1, we assign 0.1 to weekdays and to public holidays. Also, in the price models, we only implement 5-fold cross-validation. Both of these adjustments are due to the computation speed in the neural network models. 
+The weekend and holiday effects are considered by incorporating an indicator respectively. Instead of 1, I assign 0.1 to weekdays and to public holidays. Also, in the price models, I only implement 5-fold cross-validation. Both of these adjustments are due to the computation speed in the neural network models. 
 
 In short, the proposed models are as follows:
 
@@ -145,6 +147,6 @@ $\textit{involves neural network models and 10-fold cross-validation}$
 4. LCTOTD ~ 9 Lags of LCTOTD + WDAY2 + holiday
 
 ##Model Implementation and Error Analysis
-Following reports the MSE and MAPE of the proposed and Naive models.
+Following reports the MSE and MAPE of the proposed and Naive models. Note that MSE and MAPE are both calculated on the original scale of the data. 
 
 
