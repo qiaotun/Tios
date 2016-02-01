@@ -29,7 +29,7 @@ check_packages = function(names)
 check_packages(c("stats","devtools","utils","lubridate","dplyr","tseries","neuralnet", "stringr"))
 
 ##############
-data = read.csv('/Users/luohaosheng/Desktop/Question/Tios/Test/australia-victoria-energy.csv')
+data = read.csv('~/Tios/Homework/australia-victoria-energy.csv')
 #don't forget to change the path when running the code
 data = dplyr::select(data,SETTLEMENTDATE,TOTALDEMAND,RRP)%>%
   mutate(YEAR=year(SETTLEMENTDATE),MONTH=month(SETTLEMENTDATE),DAY=day(SETTLEMENTDATE),HOUR = hour(SETTLEMENTDATE),MINUTE = minute(SETTLEMENTDATE),
@@ -102,10 +102,11 @@ Holiday$holiday = 1
 #smooth Jan 14-17, all weekday, keep the remaining high demand case, use higher order. 
 data2 = data
 hot_index = rownames(data[data$MONTH==1&data$DAY%in%14:17,])
-normal_wday = data[((data$MONTH!=1)|!(data$DAY%in%14:17))&data$WDAY2==1,]
-normal_wday = group_by(normal_wday,TIME)
+normal_wday = data[((data$MONTH!=1)|(!data$DAY%in%14:17))&data$WDAY2==1,]
+normal_wday = group_by(normal_wday,HOUR,MINUTE)
 normal_wday = as.data.frame(summarise(normal_wday,TOTALDEMAND=mean(TOTALDEMAND),RRP=mean(RRP)))
 normal_wday = rbind(normal_wday,normal_wday,normal_wday,normal_wday)
+
 data2[hot_index,c("TOTALDEMAND","RRP")]=normal_wday[c("TOTALDEMAND","RRP")]
 data2$LCTOTD = NA #create log change of demand and price, pending pricing due to negative price
 data2[2:n,"LCTOTD"] = log(data2$TOTALDEMAND[2:n])-log(data2$TOTALDEMAND[1:(n-1)])
@@ -201,7 +202,6 @@ for(i in 1:t){
 
 
 
-
 }
 
 #data4 is just a temp df for trial to predict TOTD with neural network
@@ -211,8 +211,8 @@ data4 = data4[complete.cases(data4),]
 n_data4 = nrow(data4)
 name_data4 = names(data4)
 f = as.formula(paste("LCTOTD ~", paste(name_data4[!name_data4 %in% "LCTOTD"], collapse = " + ")))
-nn_LCTOTD = neuralnet(f,data=data4,hidden=6,linear.output=T)
-data4[(nrow(data4)+1):(nrow(data4)+96),"WDAY2"] = 1
+nn_LCTOTD = neuralnet(f,data=data4,hidden=5,linear.output=T)
+data4[(n_data4+1):(n_data4+96),"WDAY2"] = 1
 data4[nrow(data4),"WDAY2"] = 0
 lag_index = c(1:4,336:340)
 for(j in 1:96){
@@ -222,8 +222,6 @@ for(j in 1:96){
 }
 rownames(data4) = seq(1:nrow(data4))
 
-
-######
 
 for(i in 1:96){
     data4[(i+n_data4),1] = compute(nn_LCTOTD, data4[(i+n_data4),all.vars(f[[3]])])$net.result
@@ -242,15 +240,13 @@ pr1[i,"PRTOTD"]=start*prod(pr1[1:i,1])
 plot(pr1$PRTOTD,type="l")
 plot(data2[4225:4272,"TOTALDEMAND"],type="l")
 
-########################
+######################## no weekday
 data4 = dplyr::select(data2,LCTOTD,L1LCTOTD:L340LCTOTD)
 data4 = data4[complete.cases(data4),]
 n_data4 = nrow(data4)
 name_data4 = names(data4)
 f = as.formula(paste("LCTOTD ~", paste(name_data4[!name_data4 %in% "LCTOTD"], collapse = " + ")))
-nn_LCTOTD = neuralnet(f,data=data4,hidden=4,linear.output=T)
-
-
+nn_LCTOTD = neuralnet(f,data=data4,hidden=5,linear.output=T)
 
 lag_index = c(1:4,336:340)
 for(j in 1:96){
@@ -259,19 +255,16 @@ for(j in 1:96){
   }
 }
 rownames(data4) = seq(1:nrow(data4))
+#within-sample
+#nn_LCTOTD = compute(nn_LCTOTD,data4[(17179-48*5):17179,all.vars(f[[3]])])$net.result
+#pr1 = as.data.frame(exp(nn_LCTOTD))
+#start = data2[nrow(data2),"TOTALDEMAND"]
+#for(i in 1:nrow(pr1)){
+#  pr1[i,"PRTOTD"]=start*prod(pr1[1:i,1]) 
+#}
+#plot(pr1$PRTOTD,type="l")
 
-######
 
-nn_LCTOTD = compute(nn_LCTOTD,data4[(17179-48*5):17179,all.vars(f[[3]])])$net.result
-pr1 = as.data.frame(exp(nn_LCTOTD))
-start = data2[nrow(data2),"TOTALDEMAND"]
-for(i in 1:nrow(pr1)){
-  pr1[i,"PRTOTD"]=start*prod(pr1[1:i,1])
-}
-
-plot(pr1$PRTOTD,type="l")
-
-######
 
 for(i in 1:96){
   data4[(i+n_data4),1] = compute(nn_LCTOTD, data4[(i+n_data4),all.vars(f[[3]])])$net.result
@@ -288,4 +281,4 @@ for(i in 1:nrow(pr1)){
 }
 
 plot(pr1$PRTOTD,type="l")
-plot(data2[4225:4272,"TOTALDEMAND"],type="l")
+plot(data2[4225:4320,"TOTALDEMAND"],type="l")
