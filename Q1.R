@@ -1,9 +1,6 @@
-#autoregression order, solved
 #month, weekday/weekends or each day?, hour,half hour (may not important), demand
 
-#natural logarithmic differences, solved
 #neural network required variables
-#seasonality: detect, lags? 
 #remove outliers important！ solved
 #price freeze, unknown reason
 #external source
@@ -30,7 +27,7 @@ data = read.csv('~/Tios/Homework/australia-victoria-energy.csv')
 #don't forget to change the path when running the code
 data = dplyr::select(data,SETTLEMENTDATE,TOTALDEMAND,RRP)%>%
   mutate(YEAR=year(SETTLEMENTDATE),MONTH=month(SETTLEMENTDATE),DAY=day(SETTLEMENTDATE),HOUR = hour(SETTLEMENTDATE),MINUTE = minute(SETTLEMENTDATE),
-         TIME = paste(HOUR, MINUTE),WDAY=wday(SETTLEMENTDATE,label=T),WDAY2=1)
+         TIME = paste(HOUR, MINUTE),WDAY=wday(SETTLEMENTDATE,label=T),WDAY2=0.1)
 data[data$WDAY%in%c("Sat","Sun"),"WDAY2"]=0
 
 year = transmute(data,YEAR=year(SETTLEMENTDATE))
@@ -83,7 +80,7 @@ plot(datetime, data[(data$MONTH==4)&(data$DAY>4)&(data$DAY<14),"TOTALDEMAND"], t
 Holiday = as.data.frame(matrix(c(1,1,1,27,3,10,4,18,4,21,4,25,6,9,11,4,12,25,12,26), 
                  nrow = 10, ncol = 2, byrow=T))
 colnames(Holiday) = c("MONTH","DAY")
-Holiday$holiday = 1
+Holiday$holiday = 0.1
 
 # 14–17 January 2014 - Melbourne records 4 consecutive days of temperatures exceeding 41 °C (106 °F), two of which exceed 43 °C (109 °F)
 # 16 January 2014 - Victoria power outage, but no negative price (ignore, b/c smoothing)
@@ -99,16 +96,17 @@ Holiday$holiday = 1
 #smooth Jan 14-17, all weekday, keep the remaining high demand case, use higher order. 
 data2 = data
 hot_index = rownames(data[data$MONTH==1&data$DAY%in%14:17,])
-normal_wday = data[((data$MONTH!=1)|(!data$DAY%in%14:17))&data$WDAY2==1,]
+normal_wday = data[((data$MONTH!=1)|(!data$DAY%in%14:17))&data$WDAY2==0.1,]
 normal_wday = group_by(normal_wday,HOUR,MINUTE)
 normal_wday = as.data.frame(summarise(normal_wday,TOTALDEMAND=mean(TOTALDEMAND),RRP=mean(RRP)))
 normal_wday = rbind(normal_wday,normal_wday,normal_wday,normal_wday)
 data2[hot_index,c("TOTALDEMAND","RRP")]=normal_wday[c("TOTALDEMAND","RRP")]
 data2[data2$RRP<0,"RRP"]=0.01
+data2[data2$RRP>80,"RRP"]=80
 data2[2:n,"LCRRP"] = log(data2$RRP[2:n])-log(data2$RRP[1:(n-1)])
 
 
-#create log change of demand and price, pending pricing due to negative price
+#create log change of demand and price
 data2[2:n,"LCTOTD"] = log(data2$TOTALDEMAND[2:n])-log(data2$TOTALDEMAND[1:(n-1)])
 data2 = merge(x = data2, y = Holiday, by = c("MONTH","DAY"), all.x = TRUE) #create holiday
 data2[is.na(data2$holiday),"holiday"] = 0
@@ -166,27 +164,25 @@ data3 = data3[complete.cases(data3),]
 name_data3 = names(data3)
 lagname_data3 = c("L1LCRRP","L2LCRRP","L3LCRRP","L4LCRRP","L336LCRRP","L337LCRRP","L338LCRRP","L339LCRRP","L340LCRRP")
 # create dataset for error analysis
-ANN = ARIMA = as.data.frame(matrix(0,3,10))
-colnames(ANN) = colnames(ARIMA) = c("M1","M2","M3","M4","M5","M6","M7","M8","M9","M10")
+ANN = ARIMA = as.data.frame(matrix(0,3,7))
+colnames(ANN) = colnames(ARIMA) = c("M1","M2","M3","M4","M5","M6","Naive")
 rownames(ANN) = rownames(ARIMA) = c("MSE","MAPE","Corr") #MAE? 
 #Corr to analyze the model accuracy with the %change of a value data in AEMO
 
 # 10 models for ANN
 M_p1 = "LCTOTD + LCTOTD2 + LCTOTD3 +"
 M_p2 = paste(lagname_data3, collapse = " + ")
-M = vector("list", 10)
-M[[1]] = as.formula("LCRRP ~ LCTOTD")
+M = vector("list", 6)
+#M[[1]] = as.formula("LCRRP ~ LCTOTD")
 M[[2]] = as.formula("LCRRP ~ LCTOTD + LCTOTD2 + LCTOTD3")
 M[[3]] = as.formula(paste("LCRRP ~", "LCTOTD +", M_p2))
 #M[[3]] = as.formula(paste("LCRRP ~", M_p2))
 M[[4]] = as.formula(paste("LCRRP ~",M_p1, M_p2))
-M[[5]] = as.formula(paste("LCRRP ~ LCTOTD + holiday + WDAY2 +", M_p2))
-M[[6]] = as.formula(paste("LCRRP ~", M_p1,"holiday + WDAY2 +",M_p2))
-M[[7]] = as.formula(paste("LCRRP ~ LCTOTD + MONTH + TIME +", M_p2))
-M[[8]] = as.formula(paste("LCRRP ~", M_p1,"MONTH + TIME +",M_p2))
-M[[9]] = as.formula(paste("LCRRP ~ LCTOTD + MONTH + TIME + holiday + WDAY2 +", M_p2))
-M[[10]] = as.formula(paste("LCRRP ~", paste(name_data3[!name_data3 %in% "RRP"], collapse = " + ")))
-hiddenstr = list(0, 2, 4, 6, 6, 7, 6, 7, 7, c(6, 2)) #its nodes
+M[[5]] = as.formula(paste("LCRRP ~", M_p1,"holiday"))
+#M[[5]] = as.formula(paste("LCRRP ~ LCTOTD + holiday + WDAY2 +", M_p2))
+M[[6]] = as.formula(paste("LCRRP ~", M_p1,"WDAY2"))
+#M[[6]] = as.formula(paste("LCRRP ~", M_p1,"holiday + WDAY2"))
+hiddenstr = list(1, 2, 4, 6, 2, 2) #its nodes
 
 #random cross-validation 5%
 t = 10
@@ -196,22 +192,18 @@ for(i in 1:t){
   train.cv = data3[-index,]
   test.cv = data3[index,]
   rrp.cv = data2[index_error,"RRP"]
-  for(j in 1:10){
+  for(j in 1:6){
     nn = neuralnet(M[[j]],data=train.cv,hidden=hiddenstr[[j]],linear.output=T)
     pr.nn = exp(compute(nn,test.cv[,all.vars(M[[j]][[3]])])$net.result)
     pr.nn.RRP = rrp.cv*pr.nn
-    MSE1 = sum((pr.nn.RRP-data2[index,"RRP"])^2)/length(index)
+    MSE1 = sum((pr.nn.RRP-data2[index,"RRP"])^2)/length(index)/t
     
     ln = lm(M[[j]],data=train.cv)
     pr.ln = exp(cbind(rep(1,nrow(test.cv)),as.matrix(test.cv[,all.vars(M[[j]][[3]])]))%*%as.matrix(ln$coefficients))
     pr.ln.RRP = rrp.cv*pr.ln
-    MSE2 = sum((pr.ln.RRP-data2[index,"RRP"])^2)/length(index)
+    ARIMA["MSE",j] = ARIMA["MSE",j]+sum((pr.ln.RRP-data2[index,"RRP"])^2)/length(index)/t
     
   }
-
-
-
-
 }
 
 #data4 is just a temp df for trial to predict TOTD with neural network
@@ -222,7 +214,7 @@ n_data4 = nrow(data4)
 name_data4 = names(data4)
 f = as.formula(paste("LCTOTD ~", paste(name_data4[!name_data4 %in% "LCTOTD"], collapse = " + ")))
 nn_LCTOTD = neuralnet(f,data=data4,hidden=5,linear.output=T)
-data4[(n_data4+1):(n_data4+96),"WDAY2"] = 1
+data4[(n_data4+1):(n_data4+96),"WDAY2"] = 0.1
 data4[nrow(data4),"WDAY2"] = 0
 lag_index = c(1:4,336:340)
 for(j in 1:96){
