@@ -1,9 +1,6 @@
 #autoregression order, solved
 #month, weekday/weekends or each day?, hour,half hour (may not important), demand
-#Cross validation (how much reduction of MSE worth an new variable addtion, in prediction?),
-#above read 521 book
-#regularization, AIC, BIC
-#multicollinearity
+
 #natural logarithmic differences, solved
 #neural network required variables
 #seasonality: detect, lags? 
@@ -106,13 +103,20 @@ normal_wday = data[((data$MONTH!=1)|(!data$DAY%in%14:17))&data$WDAY2==1,]
 normal_wday = group_by(normal_wday,HOUR,MINUTE)
 normal_wday = as.data.frame(summarise(normal_wday,TOTALDEMAND=mean(TOTALDEMAND),RRP=mean(RRP)))
 normal_wday = rbind(normal_wday,normal_wday,normal_wday,normal_wday)
-
 data2[hot_index,c("TOTALDEMAND","RRP")]=normal_wday[c("TOTALDEMAND","RRP")]
-data2$LCTOTD = NA #create log change of demand and price, pending pricing due to negative price
+data2[data2$RRP<0,"RRP"]=0.01
+data2[2:n,"LCRRP"] = log(data2$RRP[2:n])-log(data2$RRP[1:(n-1)])
+
+
+#create log change of demand and price, pending pricing due to negative price
 data2[2:n,"LCTOTD"] = log(data2$TOTALDEMAND[2:n])-log(data2$TOTALDEMAND[1:(n-1)])
 data2 = merge(x = data2, y = Holiday, by = c("MONTH","DAY"), all.x = TRUE) #create holiday
 data2[is.na(data2$holiday),"holiday"] = 0
 data2 = arrange(data2,YEAR,MONTH,DAY,HOUR,MINUTE)
+
+
+
+
 
 #acf, pacf
 #acf(data2$RRP,lag.max = 96, type = "correlation")
@@ -124,18 +128,20 @@ data2 = arrange(data2,YEAR,MONTH,DAY,HOUR,MINUTE)
 
 
 #factorization
-data2$MONTH = as.factor(data2$MONTH)
+#data2$MONTH = as.factor(data2$MONTH)
 
 #create TOTD higher orders, scale down
-data2$TOTD1 = data2$TOTALDEMAND/1000
-data2$TOTD2 = data2$TOTD1^2
-data2$TOTD3 = data2$TOTD1^3 #should scale down, to avoid 小数点保存问题
+#data2$TOTD1 = data2$TOTALDEMAND/1000
+#data2$TOTD2 = data2$TOTD1^2
+#data2$TOTD3 = data2$TOTD1^3 #should scale down, to avoid 小数点保存问题
+data2[2:nrow(data2),"LCTOTD2"] = (data2[2:nrow(data2),"LCTOTD"])^2
+data2[2:nrow(data2),"LCTOTD3"] = (data2[2:nrow(data2),"LCTOTD"])^3
 
 #create RRP lags
-data2[,c("L1RRP","L2RRP","L3RRP","L4RRP","L336RRP","L337RRP","L338RRP","L339RRP",
-         "L340RRP")]=NA
-col = which(colnames(data2)=="L1RRP") #first column of lags of RRP
-col_RRP = which(colnames(data2)=="RRP")
+data2[,c("L1LCRRP","L2LCRRP","L3LCRRP","L4LCRRP","L336LCRRP","L337LCRRP","L338LCRRP","L339LCRRP",
+         "L340LCRRP")]=NA
+col = which(colnames(data2)=="L1LCRRP") #first column of lags of RRP
+col_RRP = which(colnames(data2)=="LCRRP")
 for(j in c(1:4,336:340)){
   i=j+1
   data2[i:n,col]=data2[1:(n-j),col_RRP]
@@ -155,10 +161,10 @@ for(j in c(1:4,336:340)){
 }
 
 # create dataset for RRP model training
-data3 = dplyr::select(data2, RRP, TOTD1:TOTD3, MONTH, TIME, WDAY2, holiday, L1RRP:L340RRP)
+data3 = dplyr::select(data2, LCRRP, LCTOTD, LCTOTD2, LCTOTD3, MONTH, TIME, WDAY2, holiday, L1LCRRP:L340LCRRP)
 data3 = data3[complete.cases(data3),]
 name_data3 = names(data3)
-lagname_data3 = c("L1RRP","L2RRP","L3RRP","L4RRP","L336RRP","L337RRP","L338RRP","L339RRP","L340RRP")
+lagname_data3 = c("L1LCRRP","L2LCRRP","L3LCRRP","L4LCRRP","L336LCRRP","L337LCRRP","L338LCRRP","L339LCRRP","L340LCRRP")
 # create dataset for error analysis
 ANN = ARIMA = as.data.frame(matrix(0,3,10))
 colnames(ANN) = colnames(ARIMA) = c("M1","M2","M3","M4","M5","M6","M7","M8","M9","M10")
@@ -166,36 +172,40 @@ rownames(ANN) = rownames(ARIMA) = c("MSE","MAPE","Corr") #MAE?
 #Corr to analyze the model accuracy with the %change of a value data in AEMO
 
 # 10 models for ANN
-M_p1 = "TOTD1 + TOTD2 + TOTD3 +"
+M_p1 = "LCTOTD + LCTOTD2 + LCTOTD3 +"
 M_p2 = paste(lagname_data3, collapse = " + ")
 M = vector("list", 10)
-M[[1]] = as.formula("RRP ~ TOTD1")
-M[[2]] = as.formula("RRP ~ TOTD1 + TOTD2 + TOTD3")
-#M[[3]] = as.formula(paste("RRP ~", "TOTD1 +", M_p2))
-M[[3]] = as.formula(paste("RRP ~", M_p2))
-M[[4]] = as.formula(paste("RRP ~",M_p1, M_p2))
-M[[5]] = as.formula(paste("RRP ~ TOTD1 + holiday + WDAY2 +", M_p2))
-M[[6]] = as.formula(paste("RRP ~", M_p1,"holiday + WDAY2 +",M_p2))
-M[[7]] = as.formula(paste("RRP ~ TOTD1 + MONTH + TIME +", M_p2))
-M[[8]] = as.formula(paste("RRP ~", M_p1,"MONTH + TIME +",M_p2))
-M[[9]] = as.formula(paste("RRP ~ TOTD1 + MONTH + TIME + holiday + WDAY2 +", M_p2))
-M[[10]] = as.formula(paste("RRP ~", paste(name_data3[!name_data3 %in% "RRP"], collapse = " + ")))
-hiddenstr = list(0, 1, 4, 6, 6, 7, 6, 7, 7, c(6, 2)) #its nodes
+M[[1]] = as.formula("LCRRP ~ LCTOTD")
+M[[2]] = as.formula("LCRRP ~ LCTOTD + LCTOTD2 + LCTOTD3")
+M[[3]] = as.formula(paste("LCRRP ~", "LCTOTD +", M_p2))
+#M[[3]] = as.formula(paste("LCRRP ~", M_p2))
+M[[4]] = as.formula(paste("LCRRP ~",M_p1, M_p2))
+M[[5]] = as.formula(paste("LCRRP ~ LCTOTD + holiday + WDAY2 +", M_p2))
+M[[6]] = as.formula(paste("LCRRP ~", M_p1,"holiday + WDAY2 +",M_p2))
+M[[7]] = as.formula(paste("LCRRP ~ LCTOTD + MONTH + TIME +", M_p2))
+M[[8]] = as.formula(paste("LCRRP ~", M_p1,"MONTH + TIME +",M_p2))
+M[[9]] = as.formula(paste("LCRRP ~ LCTOTD + MONTH + TIME + holiday + WDAY2 +", M_p2))
+M[[10]] = as.formula(paste("LCRRP ~", paste(name_data3[!name_data3 %in% "RRP"], collapse = " + ")))
+hiddenstr = list(0, 2, 4, 6, 6, 7, 6, 7, 7, c(6, 2)) #its nodes
 
 #random cross-validation 5%
 t = 10
 for(i in 1:t){
-  index = sample(1:nrow(data3),round((1-1/t)*nrow(data3)))
-  train.cv = data3[index,]
-  test.cv = data3[-index,]
+  index = sample(1:nrow(data3),round(1/t*nrow(data3)))
+  index_error = index - 1
+  train.cv = data3[-index,]
+  test.cv = data3[index,]
+  rrp.cv = data2[index_error,"RRP"]
   for(j in 1:10){
     nn = neuralnet(M[[j]],data=train.cv,hidden=hiddenstr[[j]],linear.output=T)
-    pr.nn = compute(nn,test.cv[,all.vars(M[[j]][[3]])]) #再检查一下，头晕的时候写的！
-    
-    tss = pr.nn$net.result
+    pr.nn = exp(compute(nn,test.cv[,all.vars(M[[j]][[3]])])$net.result)
+    pr.nn.RRP = rrp.cv*pr.nn
+    MSE1 = sum((pr.nn.RRP-data2[index,"RRP"])^2)/length(index)
     
     ln = lm(M[[j]],data=train.cv)
-    pr.ln = cbind(rep(1,nrow(test.cv)),as.matrix(test.cv[,all.vars(M[[j]][[3]])]))%*%as.matrix(ln$coefficients)
+    pr.ln = exp(cbind(rep(1,nrow(test.cv)),as.matrix(test.cv[,all.vars(M[[j]][[3]])]))%*%as.matrix(ln$coefficients))
+    pr.ln.RRP = rrp.cv*pr.ln
+    MSE2 = sum((pr.ln.RRP-data2[index,"RRP"])^2)/length(index)
     
   }
 
