@@ -98,15 +98,30 @@ Holiday$holiday = 1
 ```
 
 ##Data Smoothing and Truncating
-To address the problem of high volatility in the price series, we choose to smooth the data of a major volatility event. However, we choose to truncate the price spike in the other minor event at 80 dollars, and try to model the occasional yet relatively milder price volativity through incorporating higher orders of the total demand data. Also, to stablize the data and improve the computation efficiency, our analysis is on the logarithm scale. As a result, we replace negative price data with 0.01, whose log value can still be sufficiently small. 
-
-
-
-
-
-
-
+To address the problem of high volatility in the price series, we choose to smooth the data of the major volatility event during Tuesday, Jan. 14th to Friday, Jan. 17th, by replacing the total demand and price series with the average of demand and price at each half hours on weekdays. However, we choose to truncate the price spike in the other minor event at 80 dollars, and try to model the occasional yet relatively milder price volativity through incorporating higher orders of the total demand data. Also, to stablize the data and improve the computation efficiency, our analysis is on the logarithm scale. As a result, we replace negative price data with 0.01, whose log value can still be sufficiently small. 
 ```{r,message=FALSE,warning=FALSE}
-#plot(data$RRP, data$TOTALDEMAND, type = "p", pch=20, xlab="RRP",ylab="Total Demand",main="The Correlation Between RRP and Total Demand") #after smoothing and truncating
+data2 = data
+hot_index = rownames(data[data$MONTH==1&data$DAY%in%14:17,])
+normal_wday = data[((data$MONTH!=1)|(!data$DAY%in%14:17))&data$WDAY2==0.1,]
+normal_wday = group_by(normal_wday,HOUR,MINUTE)
+normal_wday = as.data.frame(summarise(normal_wday,TOTALDEMAND=mean(TOTALDEMAND),RRP=mean(RRP)))
+normal_wday = rbind(normal_wday,normal_wday,normal_wday,normal_wday)
+data2[hot_index,c("TOTALDEMAND","RRP")]=normal_wday[c("TOTALDEMAND","RRP")]
+data2[data2$RRP<0,"RRP"]=0.01
+data2[data2$RRP>80,"RRP"]=80
 ```
+Following we can find a strong positive correlation between the total demand for electricity and settlement price.
+```{r,message=FALSE,warning=FALSE}
+plot(data$RRP, data$TOTALDEMAND, type = "p", pch=20, xlab="RRP ($/MWh)",ylab="Total Demand (MW)",main="The Correlation Between RRP and Total Demand after Cleaning") 
+```
+
+##Model Setting
+Inspired by the five-mintue electricity forecasting method adopted by the Australian Energy Market Operator (AEMO) [6], we will utilize both the linear and neural network model, and data on the logarithmatic scale to forecast the demand and price. Also, similar to [6], we include lags.
+
+In short, we create new variables as follows:
+
+1. 
+
+
+
 
