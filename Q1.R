@@ -1,13 +1,4 @@
 #month, weekday/weekends or each day?, hour,half hour (may not important), demand
-
-#neural network required variables
-#remove outliers important！ solved
-#price freeze, unknown reason
-#external source
-
-#check missing data, 2 types
-
-###############
 # check packages
 check_packages = function(names)
 {
@@ -41,8 +32,8 @@ data[!complete.cases(data),] # no type 1 missing data
 plot(data$RRP,type="l",xlab="Index",ylab="RRP",main="The Time-series of RRP",xlim=c(1,n))
 plot(data$TOTALDEMAND,type="l")
 plot(data$RRP, data$TOTALDEMAND, type = "p", pch = 20)
-adf.test(data$TOTALDEMAND) #both are stationary
-adf.test(data$RRP) #both are stationary
+#adf.test(data$TOTALDEMAND) #both are stationary
+#adf.test(data$RRP) #both are stationary
 
 #logistic may not stable, remove the outliers
 
@@ -112,39 +103,23 @@ data2 = merge(x = data2, y = Holiday, by = c("MONTH","DAY"), all.x = TRUE) #crea
 data2[is.na(data2$holiday),"holiday"] = 0
 data2 = arrange(data2,YEAR,MONTH,DAY,HOUR,MINUTE)
 
-
+data2$MONTH=as.factor(data2$MONTH)
 
 
 
 #acf, pacf
 #acf(data2$RRP,lag.max = 96, type = "correlation")
 #acf(data2$RRP,lag.max = 96, type = "partial")
-#AR（4，5） model, no need to include MA 另外为了比较神经网络和ARIMA，input保证长一个样才有意义
+#AR（4，5） model, no need to include MA 另外为了比较神经网络和LN，input保证长一个样才有意义
 #结果与AEMO印证
 #不用单独列出来了，显得太死板学术
 
 
-
-#factorization
-#data2$MONTH = as.factor(data2$MONTH)
-
 #create TOTD higher orders, scale down
-#data2$TOTD1 = data2$TOTALDEMAND/1000
-#data2$TOTD2 = data2$TOTD1^2
-#data2$TOTD3 = data2$TOTD1^3 #should scale down, to avoid 小数点保存问题
+
 data2[2:nrow(data2),"LCTOTD2"] = (data2[2:nrow(data2),"LCTOTD"])^2
 data2[2:nrow(data2),"LCTOTD3"] = (data2[2:nrow(data2),"LCTOTD"])^3
 
-#create RRP lags
-data2[,c("L1LCRRP","L2LCRRP","L3LCRRP","L4LCRRP","L336LCRRP","L337LCRRP","L338LCRRP","L339LCRRP",
-         "L340LCRRP")]=NA
-col = which(colnames(data2)=="L1LCRRP") #first column of lags of RRP
-col_RRP = which(colnames(data2)=="LCRRP")
-for(j in c(1:4,336:340)){
-  i=j+1
-  data2[i:n,col]=data2[1:(n-j),col_RRP]
-  col=col+1
-}
 
 #create LCTOTD lags
 data2[,c("L1LCTOTD","L2LCTOTD","L3LCTOTD","L4LCTOTD","L336LCTOTD","L337LCTOTD",
@@ -159,30 +134,23 @@ for(j in c(1:4,336:340)){
 }
 
 # create dataset for RRP model training
-data3 = dplyr::select(data2, LCRRP, LCTOTD, LCTOTD2, LCTOTD3, MONTH, TIME, WDAY2, holiday, L1LCRRP:L340LCRRP)
+data3 = dplyr::select(data2, LCRRP, LCTOTD, LCTOTD2, LCTOTD3, WDAY2, holiday, MONTH)
 data3 = data3[complete.cases(data3),]
+
 name_data3 = names(data3)
-lagname_data3 = c("L1LCRRP","L2LCRRP","L3LCRRP","L4LCRRP","L336LCRRP","L337LCRRP","L338LCRRP","L339LCRRP","L340LCRRP")
 # create dataset for error analysis
-ANN = ARIMA = as.data.frame(matrix(0,3,7))
-colnames(ANN) = colnames(ARIMA) = c("M1","M2","M3","M4","M5","M6","Naive")
-rownames(ANN) = rownames(ARIMA) = c("MSE","MAPE","Corr") #MAE? 
+ANN = LN = as.data.frame(matrix(0,3,4))
+colnames(ANN) = colnames(LN) = c("M1","M2","M3","M4")
+rownames(ANN) = rownames(LN) = c("MSE","MAPE","Corr") #MAE? 
 #Corr to analyze the model accuracy with the %change of a value data in AEMO
 
 # 10 models for ANN
-M_p1 = "LCTOTD + LCTOTD2 + LCTOTD3 +"
-M_p2 = paste(lagname_data3, collapse = " + ")
-M = vector("list", 6)
-#M[[1]] = as.formula("LCRRP ~ LCTOTD")
-M[[2]] = as.formula("LCRRP ~ LCTOTD + LCTOTD2 + LCTOTD3")
-M[[3]] = as.formula(paste("LCRRP ~", "LCTOTD +", M_p2))
-#M[[3]] = as.formula(paste("LCRRP ~", M_p2))
-M[[4]] = as.formula(paste("LCRRP ~",M_p1, M_p2))
-M[[5]] = as.formula(paste("LCRRP ~", M_p1,"holiday"))
-#M[[5]] = as.formula(paste("LCRRP ~ LCTOTD + holiday + WDAY2 +", M_p2))
-M[[6]] = as.formula(paste("LCRRP ~", M_p1,"WDAY2"))
-#M[[6]] = as.formula(paste("LCRRP ~", M_p1,"holiday + WDAY2"))
-hiddenstr = list(1, 2, 4, 6, 2, 2) #its nodes
+M = vector("list", 4)
+M[[1]] = as.formula("LCRRP ~ LCTOTD + LCTOTD2 + LCTOTD3")
+M[[2]] = as.formula("LCRRP ~ LCTOTD + LCTOTD2 + LCTOTD3 + holiday")
+M[[3]] = as.formula("LCRRP ~ LCTOTD + LCTOTD2 + LCTOTD3 + WDAY2")
+M[[4]] = as.formula("LCRRP ~ LCTOTD + LCTOTD2 + LCTOTD3 + WDAY2 + holiday")
+hiddenstr = list(2, 2, 2, 3) #its nodes or (2,2,2)?
 
 #random cross-validation 5%
 t = 10
@@ -192,16 +160,16 @@ for(i in 1:t){
   train.cv = data3[-index,]
   test.cv = data3[index,]
   rrp.cv = data2[index_error,"RRP"]
-  for(j in 1:6){
+  for(j in 1:4){
     nn = neuralnet(M[[j]],data=train.cv,hidden=hiddenstr[[j]],linear.output=T)
     pr.nn = exp(compute(nn,test.cv[,all.vars(M[[j]][[3]])])$net.result)
     pr.nn.RRP = rrp.cv*pr.nn
-    MSE1 = sum((pr.nn.RRP-data2[index,"RRP"])^2)/length(index)/t
+    ANN["MSE",j] = sum((pr.nn.RRP-data2[index,"RRP"])^2)/length(index)/t
     
     ln = lm(M[[j]],data=train.cv)
     pr.ln = exp(cbind(rep(1,nrow(test.cv)),as.matrix(test.cv[,all.vars(M[[j]][[3]])]))%*%as.matrix(ln$coefficients))
     pr.ln.RRP = rrp.cv*pr.ln
-    ARIMA["MSE",j] = ARIMA["MSE",j]+sum((pr.ln.RRP-data2[index,"RRP"])^2)/length(index)/t
+    LN["MSE",j] = LN["MSE",j]+sum((pr.ln.RRP-data2[index,"RRP"])^2)/length(index)/t
     
   }
 }
