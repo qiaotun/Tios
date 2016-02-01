@@ -20,7 +20,7 @@ check_packages = function(names)
 ```
 #Question 1
 ## Introduction
-In this question, we model the 30-minute transaction data for the electricity settlement price and total demand in Victoria, Australia in 2014. The modeling process can be separated into two parts: modeling the association between settlement price and total demand, and forecasting total demand. Linear models and neural networks are applied. In the both process, we select the model based on three error measures and cross-validation. The error analysis also involves comparison with a naive model. Finally we provide a short-term forecast of settlement prices from Jan 1, 2015 00:30:00 am to Jan 3, 2015 00:00:00 am, based on the model selected. 
+In this question, we model the 30-minute transaction data for the electricity settlement price and total demand in Victoria, Australia in 2014. The modeling process can be separated into two parts: modeling the association between settlement price and total demand, and forecasting total demand. Linear models and neural networks are applied. In the both process, we select the model based on Mean Squared Error (MSE), Mean Absolute Percentage Error (MAPE) and the cross-validation techniques. The error analysis also involves comparison with a naive model, which uses the current value as a forecast of the next value. Finally we provide a short-term forecast of settlement prices from Jan 1, 2015 00:30:00 am to Jan 3, 2015 00:00:00 am, based on the model selected. 
 
 ##Data Loading and Validation
 The dataset is supposed to contain $365\times 24\times 2 = 17520$ rows of datapoints. Before any exploration into the data, we need to construct the intermediate variables and check the data quality, to make sure no duplicated or missing datapoints, and that the data are collected in 2014 (except one at 0:00:00 am on Jan 1, 2015). Intermediate variables include:
@@ -32,7 +32,7 @@ The dataset is supposed to contain $365\times 24\times 2 = 17520$ rows of datapo
 5. $\textbf{HOUR}$: the hour of a datapoint.
 6. $\textbf{MINUTE}$: the minute of a datapoint.
 7. $\textbf{WDAY}$: the days of a week of a datapoint.
-8. $\textbf{WDAY2}$: 0.1 if it is a weekday datapoint, and 0 if it is a weekend datapoint. 0.1 is chosen due to the computation concern arising in the neural network.
+8. $\textbf{WDAY2}$: 0.1 if it is a weekday datapoint, and 0 if it is a weekend datapoint. 0.1 is chosen due to the computation speed in the neural network models.
 
 Following are the results of dataset validation.
 ```{r,message=FALSE,warning=FALSE}
@@ -94,11 +94,11 @@ Selecting data in April, where the price series exhibits mild fluctuation, we ob
 Holiday = as.data.frame(matrix(c(1,1,1,27,3,10,4,18,4,21,4,25,6,9,11,4,12,25,12,26), 
                  nrow = 10, ncol = 2, byrow=T))
 colnames(Holiday) = c("MONTH","DAY")
-Holiday$holiday = 1
+Holiday$holiday = 0.1
 ```
 
 ##Data Smoothing and Truncating
-To address the problem of high volatility in the price series, we choose to smooth the data of the major volatility event during Tuesday, Jan. 14th to Friday, Jan. 17th, by replacing the total demand and price series with the average of demand and price at each half hours on weekdays. However, we choose to truncate the price spike in the other minor event at 80 dollars, and try to model the occasional yet relatively milder price volativity through incorporating higher orders of the total demand data. Also, to stablize the data and improve the computation efficiency, our analysis is on the logarithm scale. As a result, we replace negative price data with 0.01, whose log value can still be sufficiently small. 
+To address the problem of high volatility in the price series, we choose to smooth the data of the major volatility event during Tuesday, Jan. 14th to Friday, Jan. 17th, by replacing the total demand and price series with the average of demand and price at each half hour on weekdays. However, we choose to truncate the price spikes in the other minor events at 80 dollars, and try to model the occasional yet relatively milder price volativity through incorporating higher orders of total demand. Also, to stablize the data and improve the computation efficiency, our analysis is on the logarithmic scale. As a result, we replace negative price with 0.01, whose log value can still be sufficiently small. 
 ```{r,message=FALSE,warning=FALSE}
 data2 = data
 hot_index = rownames(data[data$MONTH==1&data$DAY%in%14:17,])
@@ -112,16 +112,37 @@ data2[data2$RRP>80,"RRP"]=80
 ```
 Following we can find a strong positive correlation between the total demand for electricity and settlement price.
 ```{r,message=FALSE,warning=FALSE}
-plot(data$RRP, data$TOTALDEMAND, type = "p", pch=20, xlab="RRP ($/MWh)",ylab="Total Demand (MW)",main="The Correlation Between RRP and Total Demand after Cleaning") 
+plot(data2$RRP, data2$TOTALDEMAND, type = "p", pch=20, xlab="RRP ($/MWh)",ylab="Total Demand (MW)",main="The Correlation Between RRP and Total Demand after Cleaning") 
 ```
 
 ##Model Setting
-Inspired by the five-mintue electricity forecasting method adopted by the Australian Energy Market Operator (AEMO) [6], we will utilize both the linear and neural network model, and data on the logarithmatic scale to forecast the demand and price. Also, similar to [6], we include lags.
+Inspired by the five-mintue electricity forecasting method adopted by the Australian Energy Market Operator (AEMO) [6], we will utilize both the linear and neural network model, and data on the logarithmatic scale to forecast the demand and price. Also, similar to [6], we include "4 log changes immediately prior to the period being predicted and 5 leading up to and including the period occuring exactly one week before the time of the desired prediction" [6], in the demand forecasting model. In our 30-min case, the corresponding lag orders are 1 to 4, and $7\times 24\times 2 = 336$ to $7\times 24\times 2 +5 = 340$. 
 
-In short, we create new variables as follows:
+Therefore, we create new variables as follows:
 
-1. 
+1. $\textbf{LCRRP}$: the log change of the settlement price by 30 minutes.
+2. $\textbf{LCTOTD}$: the log change of the total demand by 30 minutes.
+3. $\textbf{LCTOTD2}$ and $\textbf{LCTOTD3}$: the square and cubic of $\textbf{LCTOTD}$.
+4. $\textbf{L1LCTOTD}$ to $\textbf{L340LCTOTD}$: the nine lags of the log change of the settlement price by 30 minutes discussed above.
 
+The weekend and holiday effects are considered by incorporating an indicator respectively. Instead of 1, we assign 0.1 to weekdays and to public holidays. Also, in the price models, we only implement 5-fold cross-validation. Both of these adjustments are due to the computation speed in the neural network models. 
 
+In short, the proposed models are as follows:
+
+Price Models: 
+$\textit{involves Linear models, neural network models and 5-fold cross-validation}$
+1. LCRRP ~ LCTOTD + LCTOTD2 + LCTOTD3
+2. LCRRP ~ LCTOTD + LCTOTD2 + LCTOTD3 + WDAY2
+3. LCRRP ~ LCTOTD + LCTOTD2 + LCTOTD3 + WDAY2 + holiday (coded, but not executed due to the computation speed in the neural network models)
+
+Demand Models:
+$\textit{involves neural network models and 10-fold cross-validation}$
+1. LCTOTD ~ 9 Lags of LCTOTD
+2. LCTOTD ~ 9 Lags of LCTOTD + holiday
+3. LCTOTD ~ 9 Lags of LCTOTD + WDAY2
+4. LCTOTD ~ 9 Lags of LCTOTD + WDAY2 + holiday
+
+##Model Implementation and Error Analysis
+Following reports the MSE and MAPE of the proposed and Naive models.
 
 
