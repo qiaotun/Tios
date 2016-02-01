@@ -149,4 +149,4 @@ $\textit{involves neural network models and 10-fold cross-validation}$
 ##Model Implementation and Error Analysis
 Following reports the MSE and MAPE of the proposed and Naive models. Note that MSE and MAPE are both calculated on the original scale of the data. 
 
-
+## try order 1 in price model

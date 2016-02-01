@@ -31,16 +31,6 @@ data[!complete.cases(data),] # no type 1 missing data
 
 plot(data$RRP,type="l",xlab="Index",ylab="RRP",main="The Time-series of RRP",xlim=c(1,n))
 plot(data$TOTALDEMAND,type="l")
-plot(data$RRP, data$TOTALDEMAND, type = "p", pch = 20)
-
-par(mfrow=c(1,2))
-plot(data[600:850,"RRP"], type="l")
-plot(data[600:850,"TOTALDEMAND"],type="l")
-
-
-#seasonality within a year, due to month itself, cause weather changes
-plot(data[,"RRP"],type="l",ylim=c(-5,100))
-plot(data[,"TOTALDEMAND"],type="l",ylim=c(-5,100))
 
 #seasonality within a month
 datetime <- seq(
@@ -97,9 +87,6 @@ data2[2:n,"LCTOTD"] = log(data2$TOTALDEMAND[2:n])-log(data2$TOTALDEMAND[1:(n-1)]
 data2 = merge(x = data2, y = Holiday, by = c("MONTH","DAY"), all.x = TRUE) #create holiday
 data2[is.na(data2$holiday),"holiday"] = 0
 data2 = arrange(data2,YEAR,MONTH,DAY,HOUR,MINUTE)
-
-
-
 
 #acf, pacf
 #acf(data2$RRP,lag.max = 96, type = "correlation")
@@ -173,7 +160,7 @@ for(i in 1:t){
 }
 #Naive
 ANN["MSE","Naive"] = LN["MSE","Naive"] = sum((data2[1:(nrow(data2)-1),"RRP"]-data2[2:nrow(data2),"RRP"])^2)/(nrow(data2)-1)
-ANN["MAPE","Naive"] = LN["MAPE","Naive"] = sum(abs((data2[1:(nrow(data2)-1),"RRP"]-data2[2:nrow(data2),"RRP"])/data2[2:nrow(data2),"RRP"]))/nrow(data4)
+ANN["MAPE","Naive"] = LN["MAPE","Naive"] = sum(abs((data2[1:(nrow(data2)-1),"RRP"]-data2[2:nrow(data2),"RRP"])/data2[2:nrow(data2),"RRP"]))/nrow(data2)
 
 
 
@@ -194,7 +181,6 @@ M[[1]] = as.formula(paste("LCTOTD ~", paste(name_data4[!name_data4 %in% c("LCTOT
 M[[2]] = as.formula(paste("LCTOTD ~", paste(name_data4[!name_data4 %in% c("LCTOTD","WDAY2")], collapse = " + ")))
 M[[3]] = as.formula(paste("LCTOTD ~", paste(name_data4[!name_data4 %in% c("LCTOTD","holiday")], collapse = " + ")))
 M[[4]] = as.formula(paste("LCTOTD ~", paste(name_data4[!name_data4 %in% "LCTOTD"], collapse = " + ")))
-#No. 4 测试一下
 hiddenstr = list(6, 6, 6, 6) #its nodes or (2,2,2)?
 
 t = 10
@@ -219,13 +205,13 @@ ANN.TOTD["MSE","Naive"] = sum((data2[1:(nrow(data2)-1),"TOTALDEMAND"]-data2[2:nr
 ANN.TOTD["MAPE","Naive"] = sum(abs((data2[1:(nrow(data2)-1),"TOTALDEMAND"]-data2[2:nrow(data2),"TOTALDEMAND"])/data2[2:nrow(data2),"TOTALDEMAND"]))/nrow(data4)
 
   
-#########Predict#######
-data4 = dplyr::select(data2,LCTOTD,L1LCTOTD:L340LCTOTD,WDAY2)
-data4 = data4[complete.cases(data4),]
-n_data4 = nrow(data4)
-name_data4 = names(data4)
-f = as.formula(paste("LCTOTD ~", paste(name_data4[!name_data4 %in% "LCTOTD"], collapse = " + ")))
-nn_LCTOTD = neuralnet(f,data=data4,hidden=5,linear.output=T)
+#########Predict#######Small model prefered########
+data5 = dplyr::select(data2,LCTOTD,L1LCTOTD:L340LCTOTD,WDAY2) #missing variables
+data5 = data5[complete.cases(data5),]
+n_data5 = nrow(data5)
+name_data5 = names(data5)
+f = as.formula(paste("LCTOTD ~", paste(name_data5[!name_data5 %in% "LCTOTD"], collapse = " + ")))
+nn_LCTOTD = neuralnet(f,data=data5,hidden=5,linear.output=T)
 data4[(n_data4+1):(n_data4+96),"WDAY2"] = 0.1
 data4[nrow(data4),"WDAY2"] = 0
 lag_index = c(1:4,336:340)
