@@ -20,7 +20,7 @@ check_packages = function(names)
 ```
 #Question 1
 ## Introduction
-In this question, we model the 30-minute transaction data for the electricity settlement price and total demand in Victoria, Australia in 2014. The modeling process can be separated into two parts: modeling the association between settlement price and total demand, and forecasting total demand. Linear models and neural networks are applied. In the both process, we select the model based on Mean Squared Error (MSE), Mean Absolute Percentage Error (MAPE) and the cross-validation techniques. The error analysis also involves comparison with a naive model, which uses the current value as a forecast of the next value. Finally we provide a short-term forecast of settlement prices from Jan 1, 2015 00:30:00 am to Jan 3, 2015 00:00:00 am, based on the model selected. 
+In this question, we model the 30-minute transaction data for the electricity settlement price and total demand in Victoria, Australia in 2014. The modeling process can be separated into two parts: modeling the association between settlement price and total demand, and forecasting total demand. Linear models and neural networks are applied. In the both procedures, we select the model based on Mean Squared Error (MSE), Mean Absolute Percentage Error (MAPE) and the cross-validation techniques. The error analysis also involves comparison with a naive model, which uses the current value as a forecast of the next value. Finally we provide a short-term forecast of settlement prices from Jan 1, 2015 00:30:00 am to Jan 3, 2015 00:00:00 am, based on the model selected. 
 
 ##Data Loading and Validation
 The dataset is supposed to contain $365\times 24\times 2 = 17520$ rows of datapoints. Before any exploration into the data, we need to construct the intermediate variables and check the data quality, to make sure no duplicated or missing datapoints, and that the data are collected in 2014 (except one at 0:00:00 am on Jan 1, 2015). Intermediate variables include:
@@ -112,7 +112,9 @@ data2[data2$RRP>80,"RRP"]=80
 ```
 Following we can find a strong positive correlation between the total demand for electricity and settlement price.
 ```{r,message=FALSE,warning=FALSE}
-plot(data2$RRP, data2$TOTALDEMAND, type = "p", pch=20, xlab="RRP ($/MWh)",ylab="Total Demand (MW)",main="The Correlation Between RRP and Total Demand after Cleaning") 
+plot(data2$RRP, data2$TOTALDEMAND, type = "p", pch=20, xlab="RRP ($/MWh)",
+     ylab="Total Demand (MW)",main="The Correlation Between RRP and Total 
+     Demand after Cleaning") 
 ```
 
 ##Model Setting
