@@ -32,10 +32,6 @@ data[!complete.cases(data),] # no type 1 missing data
 plot(data$RRP,type="l",xlab="Index",ylab="RRP",main="The Time-series of RRP",xlim=c(1,n))
 plot(data$TOTALDEMAND,type="l")
 plot(data$RRP, data$TOTALDEMAND, type = "p", pch = 20)
-#adf.test(data$TOTALDEMAND) #both are stationary
-#adf.test(data$RRP) #both are stationary
-
-#logistic may not stable, remove the outliers
 
 par(mfrow=c(1,2))
 plot(data[600:850,"RRP"], type="l")
@@ -138,46 +134,48 @@ data3 = data3[complete.cases(data3),]
 
 name_data3 = names(data3)
 # create dataset for error analysis
-ANN = LN = as.data.frame(matrix(0,3,3))
-colnames(ANN) = colnames(LN) = c("M1","M2","M3")
-rownames(ANN) = rownames(LN) = c("MSE","MAPE","Corr") 
+ANN = LN = as.data.frame(matrix(0,2,4))
+colnames(ANN) = colnames(LN) = c("M1","M2","M3","Naive")
+rownames(ANN) = rownames(LN) = c("MSE","MAPE") 
 #Corr to analyze the model accuracy with the %change of a value data in AEMO
 
 # 3 models for ANN
 M = vector("list", 3)
 M[[1]] = as.formula("LCRRP ~ LCTOTD + LCTOTD2 + LCTOTD3")
-#M[[2]] = as.formula("LCRRP ~ LCTOTD + LCTOTD2 + LCTOTD3 + holiday")
-M[[2]] = as.formula("LCRRP ~ LCTOTD + LCTOTD2 + LCTOTD3 + WDAY2")
+M[[2]] = as.formula("LCRRP ~ LCTOTD + LCTOTD2 + LCTOTD3 + WDAY2") #selected
 M[[3]] = as.formula("LCRRP ~ LCTOTD + LCTOTD2 + LCTOTD3 + WDAY2 + holiday")
 
 hiddenstr = list(2, 2, 2) #its nodes or (2,2,2)?
 
-#random cross-validation 5%
-t = 10
+#random cross-validation 10%
+t = 5 #cross-validation time
 for(i in 1:t){
   cat(paste(i,","))
-  index = sample(as.numeric(rownames(data3)),round(1/t*nrow(data3)))
+  index = sample(2:nrow(data3),round(1/t*nrow(data3)))
   index_error = index - 1
-  test.cv = data3[as.character(index),]
-  train.cv = data3[as.character(setdiff(as.numeric(rownames(data3)),index)),]
-  rrp.cv = data2[as.character(index_error),"RRP"] #why data2, 因为要和真值相减
-  for(j in 1:3){
+  train.cv = data3[-index,]
+  test.cv = data3[index,]
+  rrp.cv = data2[index_error,"RRP"]
+  for(j in 1:2){
     cat(j)
     nn = neuralnet(M[[j]],data=train.cv,hidden=hiddenstr[[j]],linear.output=T)
     pr.nn = exp(compute(nn,test.cv[,all.vars(M[[j]][[3]])])$net.result)
     pr.nn.RRP = rrp.cv*pr.nn
-    ANN["MSE",j] = sum((pr.nn.RRP-data2[as.character(index),"RRP"])^2)/length(index)/t + ANN["MSE",j]
-    ANN["MAPE",j] = sum(abs((pr.nn.RRP-data2[as.character(index),"RRP"])/data2[as.character(index),"RRP"]))/length(index)/t + ANN["MAPE",j]
-    ANN["Corr",j] = (ANN["Corr",j]*(i-1) + cor(pr.nn.RRP,data2[as.character(index),"RRP"]))/i
+    ANN["MSE",j] = sum((pr.nn.RRP - data2[index,"RRP"])^2)/length(index)/t + ANN["MSE",j]
+    ANN["MAPE",j] = sum(abs((pr.nn.RRP - data2[index, "RRP"])/data2[index,"RRP"]))/length(index)/t + ANN["MAPE",j]
     
     ln = lm(M[[j]],data=train.cv)
     pr.ln = exp(cbind(rep(1,nrow(test.cv)),as.matrix(test.cv[,all.vars(M[[j]][[3]])]))%*%as.matrix(ln$coefficients))
     pr.ln.RRP = rrp.cv*pr.ln
-    LN["MSE",j] = LN["MSE",j] + sum((pr.ln.RRP-data2[as.character(index),"RRP"])^2)/length(index)/t
-    LN["MAPE",j] = LN["MAPE",j] + sum(abs((pr.ln.RRP-data2[as.character(index),"RRP"])/data2[as.character(index),"RRP"]))/length(index)/t
-    LN["Corr",j] = (LN["Corr",j]*(i-1) + cor(pr.ln.RRP,data2[as.character(index),"RRP"]))/i
+    LN["MSE",j] = LN["MSE",j] + sum((pr.ln.RRP-data2[index,"RRP"])^2)/length(index)/t
+    LN["MAPE",j] = LN["MAPE",j] + sum(abs((pr.ln.RRP-data2[index,"RRP"])/data2[index,"RRP"]))/length(index)/t
   }
 }
+#Naive
+ANN["MSE","Naive"] = LN["MSE","Naive"] = sum((data2[1:(nrow(data2)-1),"RRP"]-data2[2:nrow(data2),"RRP"])^2)/(nrow(data2)-1)
+ANN["MAPE","Naive"] = LN["MAPE","Naive"] = sum(abs((data2[1:(nrow(data2)-1),"RRP"]-data2[2:nrow(data2),"RRP"])/data2[2:nrow(data2),"RRP"]))/nrow(data4)
+
+
 
 #data4 is just a temp df for trial to predict TOTD with neural network
 #should add some other factors, based on the model selected for RRP
@@ -187,9 +185,9 @@ data4 = data4[complete.cases(data4),]
 n_data4 = nrow(data4)
 name_data4 = names(data4)
 
-ANN.TOTD = as.data.frame(matrix(0,3,5))
+ANN.TOTD = as.data.frame(matrix(0,2,5))
 colnames(ANN.TOTD) = c("M1","M2","M3","M4","Naive")
-rownames(ANN.TOTD) = c("MSE","MAPE","Corr") 
+rownames(ANN.TOTD) = c("MSE","MAPE") 
 
 M = vector("list", 5)
 M[[1]] = as.formula(paste("LCTOTD ~", paste(name_data4[!name_data4 %in% c("LCTOTD","WDAY2","holiday")], collapse = " + ")))
@@ -202,27 +200,25 @@ hiddenstr = list(6, 6, 6, 6) #its nodes or (2,2,2)?
 t = 10
 for(i in 1:t){
   cat(paste(i,","))
-  index = sample(as.numeric(rownames(data4)),round(1/t*nrow(data4)))
-  index.char = as.character(index)
+  index = sample(1:nrow(data4),round(1/t*nrow(data4)))
   index_error = index - 1
-  test.cv = data4[index.char,]
-  train.cv = data4[as.character(setdiff(as.numeric(rownames(data4)),index)),]
-  totd.cv = data2[as.character(index_error),"TOTALDEMAND"]
+  test.cv = data4[index,]
+  train.cv = data4[-index,]
+  totd.cv = data2[index,"TOTALDEMAND"]
   for(j in 1:4){
     cat(j)
     nn = neuralnet(M[[j]],data=train.cv,hidden=hiddenstr[[j]],linear.output=T)
     pr.nn = exp(compute(nn,test.cv[,all.vars(M[[j]][[3]])])$net.result)
     pr.nn.TOTD = totd.cv*pr.nn
-    ANN.TOTD["MSE",j] = sum((pr.nn.TOTD-data2[index.char,"RRP"])^2)/length(index)/t + ANN.TOTD["MSE",j] 
-    ANN.TOTD["MAPE",j] = sum(abs((pr.nn.TOTD-data2[index.char,"RRP"])/data2[index.char,"RRP"]))/length(index)/t + ANN.TOTD["MAPE",j]
-    ANN.TOTD["Corr",j] = (ANN.TOTD["Corr",j]*(i-1) + cor(pr.nn.TOTD,data2[index.char,"RRP"]))/i
+    ANN.TOTD["MSE",j] = sum((pr.nn.TOTD-data2[index,"TOTALDEMAND"])^2)/length(index)/t + ANN.TOTD["MSE",j] 
+    ANN.TOTD["MAPE",j] = sum(abs((pr.nn.TOTD-data2[index,"TOTALDEMAND"])/data2[index,"TOTALDEMAND"]))/length(index)/t + ANN.TOTD["MAPE",j]
   }
 }
 #Naive
 ANN.TOTD["MSE","Naive"] = sum((data2[1:(nrow(data2)-1),"TOTALDEMAND"]-data2[2:nrow(data2),"TOTALDEMAND"])^2)/(nrow(data2)-1)
-ANN.TOTD["MAPE","Naive"] = 1
-ANN.TOTD["Corr","Naive"] = 1
+ANN.TOTD["MAPE","Naive"] = sum(abs((data2[1:(nrow(data2)-1),"TOTALDEMAND"]-data2[2:nrow(data2),"TOTALDEMAND"])/data2[2:nrow(data2),"TOTALDEMAND"]))/nrow(data4)
 
+  
 #########Predict#######
 data4 = dplyr::select(data2,LCTOTD,L1LCTOTD:L340LCTOTD,WDAY2)
 data4 = data4[complete.cases(data4),]
