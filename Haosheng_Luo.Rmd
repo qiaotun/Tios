@@ -103,6 +103,6 @@ Holiday$holiday = 1
 
 
 ```{r,message=FALSE,warning=FALSE}
-#plot(data$RRP, data$TOTALDEMAND, type = "p", pch=20, xlab="RRP",ylab="Total Demand",main="The Correlation Between RRP and Total Demand")
+#plot(data$RRP, data$TOTALDEMAND, type = "p", pch=20, xlab="RRP",ylab="Total Demand",main="The Correlation Between RRP and Total Demand") #after smoothing and truncating
 ```
 
