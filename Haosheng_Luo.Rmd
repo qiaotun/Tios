@@ -20,7 +20,7 @@ check_packages = function(names)
 ```
 #Question 1
 ## Introduction
-In this question, I model the 30-minute transaction data for the electricity settlement price and total demand in Victoria, Australia in 2014. The modeling process can be separated into two parts: modeling the association between settlement price and total demand, and forecasting total demand. Linear models and neural networks are applied. In the both procedures, I select the proposed model based on Mean Squared Error (MSE), Mean Absolute Percentage Error (MAPE) and the cross-validation technique. The error analysis also involves comparison with a naive model, which uses the current value as a forecast of the next value. Finally I provide a short-term forecast of settlement prices from Jan 1, 2015 00:30:00 am to Jan 3, 2015 00:00:00 am, based on the model selected. 
+In this question, I model the 30-minute transaction data for the electricity settlement price and total demand in Victoria, Australia in 2014. The modeling process can be separated into two parts: forecasting total demand and modeling the association between settlement price and total demand. Linear models and neural networks are applied. In the both procedures, I select the proposed model based on Mean Squared Error (MSE), Mean Absolute Percentage Error (MAPE) and the cross-validation technique. The error analysis also involves comparison with a naive model, which uses the current value as a forecast of the next value. The data applied involve the database attached to the homework, and a dataset that contains public holidays in Victoria I create independently. Based on the model selected, I provide a short-term forecast of settlement prices from Jan 1, 2015 00:30:00 am to Jan 3, 2015 00:00:00 am. Finally, it follows the discussion about data request and reference. 
 
 ##Data Loading and Validation
 The dataset is supposed to contain $365\times 24\times 2 = 17520$ rows of datapoints. Before any exploration into the data, I need to construct the intermediate variables and check data quality, to make sure no duplicated or missing datapoints, and that the data are collected in 2014 (except one at 0:00:00 am on Jan 1, 2015). Intermediate variables include:
@@ -38,12 +38,11 @@ Following are the results of dataset validation.
 ```{r,message=FALSE,warning=FALSE}
 check_packages(c("stats","devtools","utils","lubridate","dplyr","tseries","neuralnet"))
 
-data = read.csv('~/Tios/Homework/australia-victoria-energy.csv')
+data = read.csv('/Users/luohaosheng/Desktop/Question/Tios/Test/australia-victoria-energy.csv')
 data = dplyr::select(data,SETTLEMENTDATE,TOTALDEMAND,RRP)%>%
   mutate(YEAR=year(SETTLEMENTDATE),MONTH=month(SETTLEMENTDATE),DAY=day(SETTLEMENTDATE),
-         HOUR = hour(SETTLEMENTDATE),MINUTE = minute(SETTLEMENTDATE),
+         HOUR =hour(SETTLEMENTDATE),MINUTE = minute(SETTLEMENTDATE),
          TIME = paste(HOUR, MINUTE),WDAY=wday(SETTLEMENTDATE,label=T),WDAY2=0.1)
-
 data[data$WDAY%in%c("Sat","Sun"),"WDAY2"]=0
 year = transmute(data, YEAR=year(SETTLEMENTDATE))
 n = nrow(data)
@@ -55,36 +54,37 @@ n = nrow(data)
 As a result, I can conclude that the dataset is intact. 
 
 #A Quick Glance at the Settlement Price and Total Demand
-To recognize the basic pattern of price and demand time-series, I need to take a quick scan over the data. The result will help us to build assumptions and the associated models.
+To recognize the basic pattern of price and demand time-series, we need to take a quick scan over the data. The result will help us to build assumptions and the associated models.
 
 ##Settlement Price and Total Demand Over 2014
 ```{r, message=FALSE, warning=FALSE}
-#plot(data$RRP,type="l",xlab="Index", ylab="RRP", main="The Time-series of RRP")
-#plot(data$TOTALDEMAND,type="l",xlab="Index",ylab="Total Demand",main="The Time-series of Total Demand")
+datetime = seq(from=as.POSIXct("2014-1-1 0:30"), to=as.POSIXct("2015-1-1 0:00"),
+                by="30 mins") 
+plot(datetime, data$RRP,type="l",xlab="Date", ylab="RRP ($/MWh)", 
+     main="The Time-series of RRP Over 2014",xaxs='i')
+plot(datetime, data$TOTALDEMAND,type="l",xlab="Date",ylab="Total Demand (MW)",
+     main="The Time-series of Total Demand Over 2014", xaxs='i')
 ```
-Given the nature of electricity generation, transmission, storage and auction design, the settlement price series exhibit much more complexity than the demand series [1]. In the degegulated market, the settlement price can be highly-volatile, and much more likely to become negative or exceptionally high than other commodities [2]. In the above plots I can discover a major price and demand series fluctuation from Jan 14th to 17th, due to the 4 consecutive days of "heatwave not seen for 100 years" [3], and several minor fluctuations in days such as Feb 02, due to the similar hot weather [4]. 
-
-Also, 
+Given the nature of electricity generation, transmission, storage and auction design, the settlement price series exhibit much more complexity than the demand series [1]. In the deregulated market, the settlement price can be highly-volatile, and much more likely to become negative or exceptionally high than other commodities [2]. In the above plots we can discover a major price and demand series fluctuation from Jan 14th to 17th, due to the 4 consecutive days of "heatwave not seen for 100 years" [3], and several minor fluctuations in days such as Feb 02, due to the similar hot weather [4]. 
 
 ##Seasonality
 
-Selecting data in April, where the price series exhibits mild fluctuation, I observe strong weekly seasonality and daily seasonality in the total demand series, while they are weaker in the price series. Due to the large number of the clock times, I merely incorporate the weekly effect in the model by adding a dummy variable indicating weekday, and assume that the daily seasonality in the price series can be sufficiently captured by the daily seasonality in the demand series. Also, the effect of holiday effect is also modeled as a potential variables, as suggested in [1]. The public holiday (including both national and regional) database is generated according to [5].
+Selecting data in April, where the price series exhibits mild fluctuation, I observe strong weekly seasonality and daily seasonality in the total demand series, while they are weaker in the price series. I incorporate the weekly effect in the model by adding a dummy variable indicating weekday, and assume that the daily seasonality in the price series can be sufficiently captured by the daily seasonality in the demand series. Also, the holiday effect is modeled as a potential variables, as suggested in [1]. The public holiday database (include both national and regional) is generated according to [5].
 ```{r,message=FALSE,warning=FALSE}
 datetime = seq(from=as.POSIXct("2014-4-1 0:00"), to=as.POSIXct("2014-4-30 23:30"),
                 by="30 mins")  
 plot(datetime,data[data$MONTH==4,"RRP"], type="l", xaxs='i', xlab="Date", 
-     ylab="RRP", main="The Time-series of RRP in April")
-
+     ylab="RRP ($/MWh)", main="The Time-series of RRP in April")
 plot(datetime,data[data$MONTH==4,"TOTALDEMAND"], type="l", xaxs='i', xlab="Date", 
-     ylab="Total Demand", main="The Time-series of Total Demand in April",
-     xlim = as.POSIXct(c("2014-4-1 0:00","2014-4-30 23:30")))
+     ylab="Total Demand (MW)", main="The Time-series of Total Demand in April")
 
 datetime = seq(from=as.POSIXct("2014-4-5 0:00"), to=as.POSIXct("2014-4-13 23:30"),
                by="30 mins")  
 plot(datetime, data[(data$MONTH==4)&(data$DAY>4)&(data$DAY<14),"RRP"], type="l",  
-     xaxs='i', xlab="Date",ylab="RRP", main="The Time-series of RRP during April 5th - 13th")
+     xaxs='i', xlab="Date",ylab="RRP ($/MWh)", 
+     main="The Time-series of RRP during April 5th - 13th")
 plot(datetime, data[(data$MONTH==4)&(data$DAY>4)&(data$DAY<14),"TOTALDEMAND"], 
-     type="l", xaxs='i', xlab="Date",ylab="Total Demand", 
+     type="l", xaxs='i', xlab="Date",ylab="Total Demand (MW)", 
      main="The Time-series of Total Demand during April 5th - 13th")
 
 ```
@@ -94,14 +94,18 @@ plot(datetime, data[(data$MONTH==4)&(data$DAY>4)&(data$DAY<14),"TOTALDEMAND"],
 ```{r,message=FALSE,warning=FALSE}
 # generate public holiday database
 Holiday = as.data.frame(matrix(c(1,1,1,27,3,10,4,18,4,21,4,25,6,9,11,4,12,25,12,26), 
-                 nrow = 10, ncol = 2, byrow=T))
+                               nrow = 10, ncol = 2, byrow=T))
 colnames(Holiday) = c("MONTH","DAY")
 Holiday$holiday = 0.1
 ```
 
-##Data Smoothing and Truncating
-To address the problem of high volatility in the price series, I smooth the data of the major volatility event during Tuesday, Jan. 14th to Friday, Jan. 17th, by replacing the total demand and price series with the average of demand and price at each half hour on weekdays. However, I choose to truncate the price spikes in the other minor events at 80 dollars, and try to model the occasional yet relatively milder price volativity through incorporating higher orders of total demand. Also, to stablize the data and improve the computation efficiency, our analysis is on the logarithmic scale. As a result, I replace negative price with 0.01, whose log value can still be sufficiently small. 
+#Data Smoothing and Truncating
+To address the problem of high volatility in the price series, I smooth the data of the major volatility event during Tuesday, Jan. 14th to Friday, Jan. 17th, by replacing the total demand and price series with the average of demand and price at each half hour on weekdays. However, I choose to truncate the price spikes in the other minor events at 80 dollars, and try to model the occasional yet relatively milder price volativity through incorporating higher orders of total demand. Also, to stablize the data and improve the computation efficiency, the price and demand data are transformed to the logarithmic scale. As a result, I replace the negative price with 0.01, whose log value can still be sufficiently small. 
+
+It is worth noting that data smoothing and truncating will distort the pattern that is deeply seated in the series, which inevitably leads to a failure to forecast rare and extreme events. Therefore, it is crucial for traders and quants to closely monitor the market transaction and collect more information. 
+
 ```{r,message=FALSE,warning=FALSE}
+#smooth Jan 14-17, truncate other spikes 
 data2 = data
 hot_index = rownames(data[data$MONTH==1&data$DAY%in%14:17,])
 normal_wday = data[((data$MONTH!=1)|(!data$DAY%in%14:17))&data$WDAY2==0.1,]
@@ -112,15 +116,17 @@ data2[hot_index,c("TOTALDEMAND","RRP")]=normal_wday[c("TOTALDEMAND","RRP")]
 data2[data2$RRP<0,"RRP"]=0.01
 data2[data2$RRP>80,"RRP"]=80
 ```
-Following I can find a strong positive correlation between the total demand for electricity and settlement price.
+Following we can find a strong positive correlation between the total demand for electricity and settlement price after cleaning.
 ```{r,message=FALSE,warning=FALSE}
 plot(data2$RRP, data2$TOTALDEMAND, type = "p", pch=20, xlab="RRP ($/MWh)",
      ylab="Total Demand (MW)",main="The Correlation Between RRP and Total 
      Demand after Cleaning") 
 ```
 
-##Model Setting
-Inspired by the five-mintue electricity forecasting method adopted by the Australian Energy Market Operator (AEMO) [6], I will utilize both the linear and neural network model, and data on the logarithmatic scale to forecast the demand and price. Also, similar to [6], I include "4 log changes immediately prior to the period being predicted and 5 leading up to and including the period occuring exactly one week before the time of the desired prediction" [6], in the demand forecasting model. In our 30-min case, the corresponding lag orders are 1 to 4, and $7\times 24\times 2 = 336$ to $7\times 24\times 2 +5 = 340$. 
+#Model Settings
+Inspired by the five-mintue electricity forecasting method adopted by the Australian Energy Market Operator (AEMO) [6], I utilize a neural network model to forecast the total demand. However, to forecast the settlement price, I only consider the linear models, after multiple trials with neural networks that exhibit little and unstable improvement in the prediction of price series. 
+
+Also, similar to [6], I include "4 log changes immediately prior to the period being predicted and 5 leading up to and including the period occuring exactly one week before the time of the desired prediction" [6], in the demand forecasting model. In our 30-min case, the corresponding lag orders are 1 to 4, and $7\times 24\times 2 = 336$ to $7\times 24\times 2 +5 = 340$. 
 
 Therefore, I create new variables as follows:
 
@@ -129,24 +135,317 @@ Therefore, I create new variables as follows:
 3. $\textbf{LCTOTD2}$ and $\textbf{LCTOTD3}$: the square and cubic of $\textbf{LCTOTD}$.
 4. $\textbf{L1LCTOTD}$ to $\textbf{L340LCTOTD}$: the nine lags of the log change of the settlement price by 30 minutes discussed above.
 
-The weekend and holiday effects are considered by incorporating an indicator respectively. Instead of 1, I assign 0.1 to weekdays and to public holidays. Also, in the price models, I only implement 5-fold cross-validation. Both of these adjustments are due to the computation speed in the neural network models. 
+The weekend and holiday effects are considered by incorporating an indicator respectively. Instead of 1, I assign 0.1 to weekdays and to public holidays. This adjustment is to facilitate computation in the neural network models. 
 
 In short, the proposed models are as follows:
 
 Price Models: 
-$\textit{involves Linear models, neural network models and 5-fold cross-validation}$
-1. LCRRP ~ LCTOTD + LCTOTD2 + LCTOTD3
-2. LCRRP ~ LCTOTD + LCTOTD2 + LCTOTD3 + WDAY2
-3. LCRRP ~ LCTOTD + LCTOTD2 + LCTOTD3 + WDAY2 + holiday (coded, but not executed due to the computation speed in the neural network models)
+$\textit{involves linear models and 10-fold cross-validation}$
+
+1. LCRRP ~ 1 + LCTOTD + LCTOTD2 + LCTOTD3
+2. LCRRP ~ 1 + LCTOTD + LCTOTD2 + LCTOTD3 + WDAY2
+3. LCRRP ~ 1 + LCTOTD + LCTOTD2 + LCTOTD3 + WDAY2 + holiday
 
 Demand Models:
 $\textit{involves neural network models and 10-fold cross-validation}$
-1. LCTOTD ~ 9 Lags of LCTOTD
-2. LCTOTD ~ 9 Lags of LCTOTD + holiday
-3. LCTOTD ~ 9 Lags of LCTOTD + WDAY2
-4. LCTOTD ~ 9 Lags of LCTOTD + WDAY2 + holiday
 
-##Model Implementation and Error Analysis
+1. LCTOTD ~ 1 + 9 Lags of LCTOTD
+2. LCTOTD ~ 1 + 9 Lags of LCTOTD + holiday
+3. LCTOTD ~ 1 + 9 Lags of LCTOTD + WDAY2
+4. LCTOTD ~ 1 + 9 Lags of LCTOTD + WDAY2 + holiday
+
+```{r,message=FALSE,warning=FALSE}
+data2[2:n,"LCRRP"] = log(data2$RRP[2:n])-log(data2$RRP[1:(n-1)])
+data2[2:n,"LCTOTD"] = log(data2$TOTALDEMAND[2:n])-log(data2$TOTALDEMAND[1:(n-1)])
+
+#merge data2 with the holiday database
+data2 = merge(x = data2, y = Holiday, by = c("MONTH","DAY"), all.x = TRUE) #create holiday
+data2[is.na(data2$holiday),"holiday"] = 0
+data2 = arrange(data2,YEAR,MONTH,DAY,HOUR,MINUTE)
+
+data2[2:nrow(data2),"LCTOTD2"] = (data2[2:nrow(data2),"LCTOTD"])^2
+data2[2:nrow(data2),"LCTOTD3"] = (data2[2:nrow(data2),"LCTOTD"])^3
+
+data2[,c("L1LCTOTD","L2LCTOTD","L3LCTOTD","L4LCTOTD","L336LCTOTD","L337LCTOTD",
+         "L338LCTOTD","L339LCTOTD","L340LCTOTD")]=NA 
+col = which(colnames(data2)=="L1LCTOTD")
+col_LCTOTD = which(colnames(data2)=="LCTOTD")
+for(j in c(1:4,336:340)){
+  i=j+1
+  data2[i:n,col]=data2[1:(n-j),col_LCTOTD]
+  col=col+1
+}
+
+```
+
+#Model Implementation and Error Analysis
 Following reports the MSE and MAPE of the proposed and Naive models. Note that MSE and MAPE are both calculated on the original scale of the data. 
 
-## try order 1 in price model
+##1. Settlement Price models:
+```{r,message=FALSE,warning=FALSE}
+# create dataset for RRP model training
+data3 = dplyr::select(data2, LCRRP, LCTOTD, LCTOTD2, LCTOTD3, WDAY2, holiday)
+data3 = data3[complete.cases(data3),]
+
+name_data3 = names(data3)
+
+# create dataset for error analysis
+LN = as.data.frame(matrix(0,2,4))
+colnames(LN) = c("M1","M2","M3","Naive")
+rownames(LN) = c("MSE","MAPE") 
+
+M = vector("list", 3)
+M[[1]] = as.formula("LCRRP ~ LCTOTD + LCTOTD2 + LCTOTD3")
+M[[2]] = as.formula("LCRRP ~ LCTOTD + LCTOTD2 + LCTOTD3 + WDAY2")
+M[[3]] = as.formula("LCRRP ~ LCTOTD + LCTOTD2 + LCTOTD3 + WDAY2 + holiday")
+
+
+#random cross-validation 10%
+t = 10 #cross-validation time
+set.seed(667)
+for(i in 1:t){
+  index = sample(2:nrow(data3),round(1/t*nrow(data3)))
+  index_error = index - 1
+  train.cv = data3[-index,]
+  test.cv = data3[index,]
+  rrp.cv = data2[index_error,"RRP"]
+  for(j in 1:3){    
+    ln = lm(M[[j]],data=train.cv)
+    pr.ln = exp(cbind(rep(1,nrow(test.cv)),
+                      as.matrix(test.cv[,all.vars(M[[j]][[3]])]))%*%
+                  as.matrix(ln$coefficients))
+    pr.ln.RRP = rrp.cv*pr.ln
+    LN["MSE",j] = LN["MSE",j] + 
+      sum((pr.ln.RRP - data2[index,"RRP"])^2)/t/(length(index)+1)
+    LN["MAPE",j] = LN["MAPE",j] + 
+      sum(abs((pr.ln.RRP - data2[index,"RRP"])/data2[index,"RRP"]))/t/(length(index)+1)
+  }
+}
+
+LN["MSE","Naive"] = sum((data2[1:(nrow(data)-1),"RRP"]
+                         - data2[2:nrow(data),"RRP"])^2)/(nrow(data)-1)
+LN["MAPE","Naive"] = sum(abs((data2[1:(nrow(data)-1),"RRP"] - 
+                                data2[2:nrow(data),"RRP"])/
+                               data2[2:nrow(data),"RRP"]))/(nrow(data)-1)
+
+("The cross-validation error of the linear models:")
+round(LN,4)
+
+```
+Above we can discover that my proposed models of price perform better than the naive model in term of the prediction error. However, given the almost identical size of error, I favor the simpler one. Therefore, the linear model: LCRRP ~ LCTOTD + LCTOTD2 + LCTOTD3 is selected. 
+
+##2. Total demand models:
+```{r,message=FALSE,warning=FALSE}
+#create dataset for demand model training
+data4 = dplyr::select(data2,LCTOTD,L1LCTOTD:L340LCTOTD,WDAY2,holiday)
+data4 = data4[complete.cases(data4),]
+n_data4 = nrow(data4)
+name_data4 = names(data4)
+
+ANN.TOTD = as.data.frame(matrix(0,2,5))
+colnames(ANN.TOTD) = c("M1","M2","M3","M4","Naive")
+rownames(ANN.TOTD) = c("MSE","MAPE") 
+
+M = vector("list", 5)
+M[[1]] = as.formula(paste("LCTOTD ~", 
+                          paste(name_data4[!name_data4 %in% c("LCTOTD","WDAY2","holiday")], collapse = " + ")))
+M[[2]] = as.formula(paste("LCTOTD ~", 
+                          paste(name_data4[!name_data4 %in% c("LCTOTD","WDAY2")], collapse = " + ")))
+M[[3]] = as.formula(paste("LCTOTD ~", 
+                          paste(name_data4[!name_data4 %in% c("LCTOTD","holiday")], collapse = " + ")))
+M[[4]] = as.formula(paste("LCTOTD ~", 
+                          paste(name_data4[!name_data4 %in% "LCTOTD"], collapse = " + ")))
+hiddenstr = list(6, 6, 6, 6)
+
+#random cross-validation 10%
+t = 10  #cross-validation time
+for(i in 1:t){
+  index = sample(1:nrow(data4),round(1/t*nrow(data4)))
+  index_error = index - 1
+  test.cv = data4[index,]
+  train.cv = data4[-index,]
+  totd.cv = data2[index,"TOTALDEMAND"]
+  for(j in 1:4){
+    nn = neuralnet(M[[j]],data=train.cv,hidden=hiddenstr[[j]],linear.output=T)
+    pr.nn = exp(compute(nn,test.cv[,all.vars(M[[j]][[3]])])$net.result)
+    pr.nn.TOTD = totd.cv*pr.nn
+    ANN.TOTD["MSE",j] = sum((pr.nn.TOTD-data2[index,"TOTALDEMAND"])^2)/
+      length(index)/t + ANN.TOTD["MSE",j] 
+    ANN.TOTD["MAPE",j] = sum(abs((pr.nn.TOTD-data2[index,"TOTALDEMAND"])/
+                                   data2[index,"TOTALDEMAND"]))/length(index)/t + 
+      ANN.TOTD["MAPE",j]
+  }
+}
+
+ANN.TOTD["MSE","Naive"] = sum((data2[1:(nrow(data2)-1),"TOTALDEMAND"]-
+                                 data2[2:nrow(data2),"TOTALDEMAND"])^2)/(nrow(data2)-1)
+ANN.TOTD["MAPE","Naive"] = sum(abs((data2[1:(nrow(data2)-1),"TOTALDEMAND"]-
+                                      data2[2:nrow(data2),"TOTALDEMAND"])/
+                                     data2[2:nrow(data2),"TOTALDEMAND"]))/nrow(data4)
+
+("The cross-validation error of the neural network models:")
+round(ANN.TOTD,4)
+```
+Similar to the price models, my proposed models of demand uniformly perform better than the naive model, but the difference among proposed models is negligible. As a result, I favor the simplest neural network model: LCTOTD ~ 1 + 9 Lags of LCTOTD
+
+#Forecast of the Settlement Price in the Next 48 Hours
+Based on the analysis above, I predict the total demand of electricity with the neural network model and then the price with the linear model. The whole dataset is served as the training set. The forecast is displayed in the following plots. 
+
+##Predict the Total Demand
+```{r,message=FALSE,warning=FALSE}
+#create dataset for demand prediction
+data5 = dplyr::select(data2,LCTOTD,L1LCTOTD:L340LCTOTD)
+data5 = data5[complete.cases(data5),]
+n_data5 = nrow(data5)
+name_data5 = names(data5)
+
+#implementation
+f = as.formula(paste("LCTOTD ~", paste(name_data5[!name_data5 %in% "LCTOTD"], 
+                                       collapse = " + ")))
+nn_LCTOTD = neuralnet(f,data=data5,hidden=5,linear.output=T)
+
+lag_index = c(1:4,336:340)
+for(j in 1:96){
+  for(i in seq(2:ncol(data5))){
+    data5[(j+n_data5),(i+1)]=data5[(j+n_data5-lag_index[i]),1]
+  }
+}
+rownames(data5) = seq(1:nrow(data5))
+
+for(i in 1:96){
+  data5[(i+n_data5),1] = compute(nn_LCTOTD, data5[(i+n_data5),all.vars(f[[3]])])$net.result
+  for(j in 1:4){
+    data5[(i+n_data5+j),(1+j)]=data5[(i+n_data5),1]
+  }
+}
+data5 = data5[complete.cases(data5),]
+
+pr1 = as.data.frame(exp(data5[(n_data5+1):nrow(data5),"LCTOTD"]))
+start = data2[nrow(data2),"TOTALDEMAND"]
+for(i in 1:nrow(pr1)){
+  pr1[i,"PRTOTD"]=start*prod(pr1[1:i,1]) #prediction of total demand
+}
+
+datetime = seq(from=as.POSIXct("2015/1/1 0:30"), to=as.POSIXct("2015/1/3 0:00"), 
+                by="30 mins")  
+plot(datetime,pr1$PRTOTD,type="l",xaxs='i', xlab="Date", ylab = "Total Demand (MW)",
+     main="The Prediction of Total Demand in 48 Hours",
+     xlim = as.POSIXct(c("2015/1/1 0:30","2015/1/3 0:00")))
+```
+
+
+##Predict the Settlement Price
+```{r,message=FALSE,warning=FALSE}
+#create dataset for price prediction
+colnames(pr1) = c("SETTLEMENTDATE","TOTALDEMAND")
+pr1_lag = data[nrow(data),c("SETTLEMENTDATE","TOTALDEMAND")]
+pr1 = rbind(pr1_lag,pr1)
+pr1[,1] = seq(from=as.POSIXct("2015/1/1 0:00"), to=as.POSIXct("2015/1/3 0:00"), 
+              by="30 mins") 
+n = nrow(pr1)
+pr1[2:n,"LCTOTD"] = log(pr1$TOTALDEMAND[2:n])-log(pr1$TOTALDEMAND[1:(n-1)])
+pr1[2:n,"LCTOTD2"] = pr1[2:n,"LCTOTD"]^2
+pr1[2:n,"LCTOTD3"] = pr1[2:n,"LCTOTD"]^3
+pr1 = pr1[complete.cases(pr1),]
+
+data6 = dplyr::select(data2,LCRRP,LCTOTD,LCTOTD2,LCTOTD3)
+data6 = data6[complete.cases(data6),]
+
+#implementation
+f = as.formula("LCRRP ~ LCTOTD + LCTOTD2 + LCTOTD3")
+ln = lm(f,data=data6)
+pr.RRP.log = exp(cbind(rep(1,nrow(pr1)),as.matrix(pr1[,all.vars(f[[3]])]))
+                 %*%as.matrix(ln$coefficients))
+start = data2[nrow(data2),"RRP"]
+pr.RRP = as.data.frame(matrix(0,nrow(pr.RRP.log),1))
+colnames(pr.RRP)="PRRRP"
+for(i in 1:nrow(pr.RRP)){
+  pr.RRP[i,1]=start*prod(pr.RRP.log[1:i,1]) #prediction of the setlement price
+}
+plot(datetime,pr.RRP$PRRRP,type="l",xaxs='i', xlab="Date", ylab = "Price ($/MWh)",
+     main="The Prediction of Settlement Price in 48 Hours", ylim = c(10,30),
+     xlim = as.POSIXct(c("2015/1/1 0:30","2015/1/3 0:00")))
+```
+
+##Five More Requests for Data
+If I were allowed to make five more requests for data, I would choose real-time temperature, fuel prices, addition of generation or transmission capacity, power outage, power import/export and natural disaster data such as storm, flood or bushfire. Desired set of variables should demonstrate long-term and short-term changes in electricity demand and supply. 
+
+##Reference
+
+1. J.P.S. Catalao, S.J.P.S. Mariano, V.M.F. Mendes, L.A.F.M. Ferreira, Short-term electricity prices forecasting in a competitive market: A neural network approach, Electric Power Systems Research. 77 (10) (2007) 1297–1304.
+
+2. F.J. Nogales, J. Contreras, A.J. Conejo, R. Espinola, Forecasting next-day electricity prices by time series models, IEEE Transactions Power Systems. 17 (2) (2002) 342–348.
+
+3. A. Caldwell, Melbourne records heatwave not seen for 100 years, Australian Broadcasting Corporation. http://www.abc.net.au/pm/content/2013/s3927578.htm
+
+4. High Demand Event Report – 28 Jan 2014 (Victoria and South Australia), Australia Energy Market Operator. http://www.aemo.com.au/News-and-Events/News/2014-Media-Releases/High-Demand-Event-Report-28-January-2014-for-Victoria-and-South-Australia
+
+5. Public Holidays in Victoria in 2014. http://www.officeholidays.com/countries/australia/victoria/2014.php
+
+6. J. Hoo, Five Minute Electricity Demand Forecasting: Neural Network Model Documentation V2, Australia Energy Market Operator. http://www.aemo.com.au/Electricity/Policies-and-Procedures/Forecasting
+
+
+#Question 2
+##Part 1
+This is a linear programming question. I am required to optimize the linear profit function, subject to 200 linear constraints that the total amount of each material used should be smaller than its limit, and 150 linear constraints that the unit of each product should be bigger than 0. 
+
+Follwing we can find the maximal profit and the associated unit of production:
+```{r,message=FALSE,warning=FALSE}
+check_packages(c("gdata","utils","lpSolve"))
+
+path = '/Users/luohaosheng/Desktop/Question/Tios/Test/company-production.xlsx'
+Usage = read.xls(path,sheet=1)
+Usage[,1]=NULL
+Usage = t(as.matrix(Usage))
+Limit = read.xls(path,sheet=2)
+Limit[,1]=NULL
+Limit = t(as.matrix(Limit))
+Return = read.xls(path,sheet=3)
+Return[,1]=NULL
+Return = t(as.matrix(Return))
+
+n_col = ncol(Usage)
+n_row = nrow(Usage)
+
+f.obj = Return
+f.con = rbind(Usage,diag(n_col))
+f.dir = c(rep("<=",n_row),rep(">=",n_col))
+f.rhs = c(Limit,rep(0,n_col))
+
+(Sol = lp ("max", f.obj, f.con, f.dir, f.rhs))
+("The optimal choice of production are:")
+t(round(data.frame(OptChoice = Sol$solution),4))
+```
+
+##Part 2
+Let's raise the resource limit all the way to infinite and use the above linear programming model to calculate the optimal production again. Following I report the product index that we do not produce under the Material Usage conditions.
+
+1. Assume we have 10^8 units in each of all materials:
+```{r,message=FALSE,warning=FALSE}
+f.obj = Return
+f.con = rbind(Usage,diag(n_col))
+f.dir = c(rep("<=",n_row),rep(">=",n_col))
+f.rhs = c(rep(10^6,n_row),rep(0,n_col))
+
+Sol = lp ("max", f.obj, f.con, f.dir, f.rhs)
+Amount = as.matrix(Sol$solution)
+which(Amount==0)
+```
+2. Assume we have 10^15 units in each of all materials:
+```{r,message=FALSE,warning=FALSE,echo=FALSE}
+f.obj = Return
+f.con = rbind(Usage,diag(n_col))
+f.dir = c(rep("<=",n_row),rep(">=",n_col))
+f.rhs = c(rep(10^15,n_row),rep(0,n_col))
+
+Sol = lp ("max", f.obj, f.con, f.dir, f.rhs)
+Amount = as.matrix(Sol$solution)
+which(Amount==0)
+```
+
+We can discover that when we have unlimited amount of resource, the optimal choice of production of over 100 products is 0, which means that we do not need 150 boxes at anytime. In other words, the boxing requirement is trivial in this question. 
+
+
+
+
+
