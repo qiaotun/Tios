@@ -124,7 +124,7 @@ plot(data2$RRP, data2$TOTALDEMAND, type = "p", pch=20, xlab="RRP ($/MWh)",
 ```
 
 #Model Settings
-Inspired by the five-mintue electricity forecasting method adopted by the Australian Energy Market Operator (AEMO) [6], I utilize a neural network model to forecast the total demand. However, to forecast the settlement price, I only consider the linear models, after multiple trials with neural networks that exhibit little and unstable improvement in the prediction of price series. 
+Inspired by the five-mintue electricity forecasting method adopted by the Australian Energy Market Operator (AEMO) [6], I utilize a neural network model to forecast the total demand. However, to forecast the settlement price, I only consider the linear models, after multiple trials with neural networks that exhibit little and unstable improvement in the prediction of price series with the data available. 
 
 Also, similar to [6], I include "4 log changes immediately prior to the period being predicted and 5 leading up to and including the period occuring exactly one week before the time of the desired prediction" [6], in the demand forecasting model. In our 30-min case, the corresponding lag orders are 1 to 4, and $7\times 24\times 2 = 336$ to $7\times 24\times 2 +5 = 340$. 
 
@@ -368,7 +368,7 @@ plot(datetime,pr.RRP$PRRRP,type="l",xaxs='i', xlab="Date", ylab = "Price ($/MWh)
 ```
 
 ##Five More Requests for Data
-If I were allowed to make five more requests for data, I would choose real-time temperature, fuel prices, addition of generation or transmission capacity, power outage, power import/export and natural disaster data such as storm, flood or bushfire. Desired set of variables should demonstrate long-term and short-term changes in electricity demand and supply. 
+If I were allowed to make five more requests for data, I would choose real-time temperature, fuel prices, addition of generation or transmission capacity, power outage, power import/export and natural disaster data such as storm, flood or bushfire. A desired set of variables should demonstrate long-term and short-term changes in electricity demand and supply. 
 
 ##Reference
 
@@ -420,7 +420,7 @@ t(round(data.frame(OptChoice = Sol$solution),4))
 ##Part 2
 Let's raise the resource limit all the way to infinite and use the above linear programming model to calculate the optimal production again. Following I report the product index that we do not produce under the Material Usage conditions.
 
-1. Assume we have 10^8 units in each of all materials:
+1. Assume we have $10^6$ units in each of all materials:
 ```{r,message=FALSE,warning=FALSE}
 f.obj = Return
 f.con = rbind(Usage,diag(n_col))
@@ -431,8 +431,8 @@ Sol = lp ("max", f.obj, f.con, f.dir, f.rhs)
 Amount = as.matrix(Sol$solution)
 which(Amount==0)
 ```
-2. Assume we have 10^15 units in each of all materials:
-```{r,message=FALSE,warning=FALSE,echo=FALSE}
+2. Assume we have $10^{15}$ units in each of all materials:
+```{r,message=FALSE,warning=FALSE}
 f.obj = Return
 f.con = rbind(Usage,diag(n_col))
 f.dir = c(rep("<=",n_row),rep(">=",n_col))
